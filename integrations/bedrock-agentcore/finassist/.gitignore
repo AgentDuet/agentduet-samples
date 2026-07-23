@@ -21,6 +21,3 @@ agentcore/cdk/dist/
 
 # OS / editor
 .DS_Store
-
-# Docs (kept local; blog lives outside this repo)
-/README.md
