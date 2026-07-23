@@ -63,8 +63,8 @@ SSH into the instance, then:
 sudo apt-get update && sudo apt-get install -y docker.io docker-compose-v2
 sudo usermod -aG docker $USER   # then re-login
 
-git clone <your-repo-url> medical-pretriage-agent
-cd medical-pretriage-agent
+git clone https://github.com/AgentDuet/agentduet-samples.git
+cd agentduet-samples/integrations/aws-lightsail/medical-pretriage-agent
 cp .env.example .env
 # edit .env with AGENTDUET_* and AWS credentials
 
