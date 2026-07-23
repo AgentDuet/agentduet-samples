@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "medical-pretriage-agent"
+version = "0.1.0"
+description = "Medical Pre-Triage voice agent using AgentDuet SDK and Amazon Nova 2 Sonic"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "agentduet[nova-sonic]==1.0.0b9",
+  "boto3>=1.35.0,<2",
+  "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+medical-pretriage-agent = "medical_pretriage.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

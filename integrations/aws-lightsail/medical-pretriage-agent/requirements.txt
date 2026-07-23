@@ -1,0 +1,8 @@
+# AgentDuet voice SDK + Amazon Nova Sonic (Bedrock bidirectional stream)
+agentduet[nova-sonic]==1.0.0b9
+
+# CloudWatch Logs for transcript observability
+boto3>=1.35.0,<2
+
+# Config / env
+python-dotenv>=1.0.0
