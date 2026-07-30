@@ -1,256 +1,142 @@
-"""
-Customer Support — AgentDuet + OpenAI Realtime.
+"""VibeRider Resolve — AgentDuet + Amazon Nova 2 Sonic.
 
-Answers FAQs, files tickets, escalates to a human when needed.
+Rider/driver voice support for lost items and ride complaints.
+Cases are queued during the call; Pipedrive (or mock JSON) is written on hangup.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
-import uuid
-from datetime import datetime, timezone
+import sys
 from pathlib import Path
-from typing import Any, Optional
 
-from agents import function_tool
-from agents.realtime import RealtimeAgent, RealtimeRunner
-from agents.realtime.session import RealtimeSession
+import requests
 from dotenv import load_dotenv
 
 from agentduet import (
-    BufferFullError,
-    Call,
     CallAudioConfig,
-    CallClosedError,
+    CallEvent,
     IncomingCallNotification,
     SessionManager,
     SessionManagerConfig,
     new_session_id,
 )
 
+from nova_sonic import NovaSettings, start_nova_sonic_session
+from pipedrive import PipedriveClient
+from tools import SupportTools
+
 HERE = Path(__file__).resolve().parent
 load_dotenv(HERE / ".env")
 load_dotenv()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
 logger = logging.getLogger(__name__)
 
-SAMPLE_RATE = 24000
-TICKET_DIR = Path(__file__).resolve().parent / "data"
-TICKET_DIR.mkdir(parents=True, exist_ok=True)
 
-_CTX: dict[str, Any] = {}
-
-
-@function_tool
-async def create_ticket(subject: str, details: str, priority: str = "normal") -> str:
-    """File a support ticket after the caller describes their issue."""
-    ticket_id = f"TKT-{uuid.uuid4().hex[:8].upper()}"
-    record = {
-        "ticket_id": ticket_id,
-        "call_id": _CTX.get("call_id"),
-        "caller": _CTX.get("caller"),
-        "subject": subject,
-        "details": details,
-        "priority": priority,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    path = TICKET_DIR / f"{ticket_id}.json"
-    path.write_text(json.dumps(record, indent=2), encoding="utf-8")
-    logger.info("Ticket saved %s", path)
-    _CTX["last_ticket_id"] = ticket_id
-    return (
-        f"Ticket {ticket_id} created. Read the ticket ID back to the caller. "
-        "Ask if anything else is needed."
+def _configure_logging(level: str) -> None:
+    logging.basicConfig(
+        level=getattr(logging, level, logging.INFO),
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+        stream=sys.stdout,
     )
+    logging.getLogger("agentduet").setLevel(getattr(logging, level, logging.INFO))
 
 
-@function_tool
-async def escalate_to_human(reason: str) -> str:
-    """Transfer to a human agent when the bot cannot help."""
-    _CTX["escalate"] = {"reason": reason}
-    return (
-        "Tell the caller you are connecting them to a specialist now. "
-        "Keep it to one short sentence."
+async def notify_telegram(text: str) -> None:
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    chat = (
+        os.getenv("TELEGRAM_SUPPORT_CHAT_ID", "").strip()
+        or os.getenv("TELEGRAM_CHAT_ID", "").strip()
     )
-
-
-@function_tool
-async def hang_up() -> str:
-    """End the call after a brief goodbye."""
-    call: Call | None = _CTX.get("call")
-    if call is not None:
-        try:
-            for _ in range(40):
-                if await call.get_send_audio_buffer_size() == 0:
-                    break
-                await asyncio.sleep(0.1)
-            await call.close()
-        except CallClosedError:
-            pass
-    return "Call ended."
-
-
-INSTRUCTIONS = (
-    "You are a phone customer support agent for a general consumer product company. "
-    "Greet briefly, ask how you can help, and keep replies short and spoken. "
-    "For account issues that need follow-up, call create_ticket and read the ticket ID. "
-    "If the caller is angry, asks for a person, or the request is outside basic FAQ, "
-    "call escalate_to_human. When they are done, say goodbye and call hang_up. "
-    "Never invent refund amounts, order statuses, or policy exceptions."
-)
-
-
-def build_runner() -> RealtimeRunner:
-    agent = RealtimeAgent(
-        name="CustomerSupport",
-        instructions=INSTRUCTIONS,
-        tools=[create_ticket, escalate_to_human, hang_up],
-    )
-    return RealtimeRunner(
-        starting_agent=agent,
-        config={
-            "model_settings": {
-                "model_name": "gpt-realtime-1.5",
-                "audio": {
-                    "input": {
-                        "format": "pcm16",
-                        "transcription": {"model": "gpt-4o-mini-transcribe"},
-                        "turn_detection": {
-                            "type": "semantic_vad",
-                            "interrupt_response": True,
-                        },
-                    },
-                    "output": {"format": "pcm16", "voice": "ash"},
-                },
-            }
-        },
-    )
-
-
-class OpenAIBridge:
-    def __init__(self, call: Call, session: RealtimeSession):
-        self._call = call
-        self._session = session
-        self._send_task: Optional[asyncio.Task] = None
-        self._recv_task: Optional[asyncio.Task] = None
-        self._terminated = False
-
-    async def _on_hangup(self, _evt: Any) -> None:
-        self._terminated = True
-        try:
-            await self._session.close()
-        except Exception:
-            logger.exception("Error closing OpenAI session")
-        for t in (self._send_task, self._recv_task):
-            if t and not t.done():
-                t.cancel()
-        await asyncio.gather(
-            *[t for t in (self._send_task, self._recv_task) if t],
-            return_exceptions=True,
+    if not token or not chat:
+        logger.info(
+            "Telegram skipped (set TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID). %s", text
         )
-
-    async def run(self) -> None:
-        self._call.on_hangup(self._on_hangup)
-        self._send_task = asyncio.create_task(self._to_model())
-        self._recv_task = asyncio.create_task(self._from_model())
-        await asyncio.gather(self._send_task, self._recv_task, return_exceptions=True)
-
-    async def _to_model(self) -> None:
-        try:
-            async for chunk in self._call.caller.audio_stream():
-                if self._terminated:
-                    break
-                await self._session.send_audio(chunk)
-        except (CallClosedError, asyncio.CancelledError):
-            pass
-
-    async def _from_model(self) -> None:
-        try:
-            async for event in self._session:
-                if self._terminated:
-                    break
-                if event.type == "audio":
-                    data = event.audio.data
-                    if not data:
-                        continue
-                    try:
-                        await self._call.send_audio(data)
-                    except BufferFullError:
-                        logger.warning("Outgoing buffer full — dropping chunk")
-                    except CallClosedError:
-                        break
-                elif event.type == "audio_interrupted":
-                    await self._call.clear_send_audio_buffer()
-                elif event.type == "error":
-                    logger.error("OpenAI Realtime error: %s", event.error)
-        except (CallClosedError, asyncio.CancelledError):
-            pass
-
-
-async def handle_call(call: Call) -> None:
-    _CTX.clear()
-    _CTX.update(
-        {
-            "call": call,
-            "call_id": call.id,
-            "caller": call.participant.value if call.participant else "unknown",
-        }
-    )
-    runner = build_runner()
-    async with await runner.run() as oai_session:
-        answered = await call.answer()
-        if not answered:
-            logger.error(
-                "answer failed: %s (%s)",
-                answered.error_message,
-                answered.error_code,
-            )
-            return
-        await OpenAIBridge(call, oai_session).run()
-
-    if not _CTX.get("escalate"):
         return
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
 
-    try:
-        await call.clear_send_audio_buffer()
-    except CallClosedError:
-        return
-    connected = await call.connect(ring_time_seconds=40)
-    if not connected:
-        logger.error(
-            "connect failed: %s (%s)",
-            connected.error_message,
-            connected.error_code,
+    def _send() -> None:
+        resp = requests.post(
+            url, json={"chat_id": chat, "text": text}, timeout=15
         )
-        await call.disconnect()
-        return
-    await call.close()
+        if resp.status_code >= 400:
+            logger.error("Telegram send failed %s: %s", resp.status_code, resp.text)
+
+    await asyncio.to_thread(_send)
 
 
-async def main() -> None:
+async def run() -> None:
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    _configure_logging(log_level)
+
+    api_key = os.environ["AGENTDUET_API_KEY"]
+    connector_uuid = os.environ["AGENTDUET_CONNECTOR_UUID"]
+    settings = NovaSettings.from_env()
+    pipedrive = PipedriveClient()
+
     config = SessionManagerConfig.create(
-        api_key=os.environ["AGENTDUET_API_KEY"],
-        connector_uuid=os.environ["AGENTDUET_CONNECTOR_UUID"],
-        call_audio=CallAudioConfig(sample_rate=SAMPLE_RATE, buffer_size=1024 * 1024),
+        api_key=api_key,
+        connector_uuid=connector_uuid,
+        call_audio=CallAudioConfig(sample_rate=settings.sample_rate),  # type: ignore[arg-type]
     )
+
+    logger.info(
+        "Starting VibeRider Resolve (Nova Sonic=%s region=%s rate=%s pipedrive_mock=%s)",
+        settings.nova_model_id,
+        settings.aws_region,
+        settings.sample_rate,
+        pipedrive.mock_mode,
+    )
+
     async with SessionManager(config) as sm:
-        logger.info("Customer support agent online")
+        logger.info("AgentDuet connected. Waiting for inbound calls...")
 
         @sm.on_incoming_call
         async def on_call(noti: IncomingCallNotification) -> None:
+            participant = str(noti.participant)
+            logger.info(
+                "Incoming call %s from %s (subscriber=%s)",
+                noti.call_id,
+                participant,
+                noti.subscriber,
+            )
+
             session = await sm.open_session(new_session_id(), noti.subscriber)
             call = await session.process_call(noti)
+            phone = (
+                (call.participant.value if call.participant else None)
+                or (noti.participant.value if noti.participant else None)
+                or "unknown"
+            )
+
+            @call.on_hangup
+            def on_hangup(_evt) -> None:
+                logger.info("Call %s hung up", call.id)
+
+            @call.on_call_event(CallEvent.ERROR)
+            def on_error(evt) -> None:
+                logger.error(
+                    "Call %s error: %s %s",
+                    call.id,
+                    evt.get("error_code"),
+                    evt.get("error_message"),
+                )
+
+            tools = SupportTools(pipedrive=pipedrive, caller_phone=phone)
             try:
-                await handle_call(call)
+                result = await start_nova_sonic_session(
+                    call, settings=settings, tools=tools
+                )
+                if result:
+                    await notify_telegram(f"VibeRider Resolve case finalized: {result}")
             except Exception:
                 logger.exception("Call %s failed", call.id)
+                try:
+                    await tools.finalize_after_call()
+                except Exception:
+                    logger.exception("Finalize after failed call errored")
                 try:
                     await call.close()
                 except Exception:
@@ -259,5 +145,15 @@ async def main() -> None:
         await sm.run_forever()
 
 
+def main() -> None:
+    try:
+        asyncio.run(run())
+    except KeyboardInterrupt:
+        logger.info("Shutting down")
+    except Exception:
+        logger.exception("Fatal error")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

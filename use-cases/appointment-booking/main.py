@@ -1,5 +1,7 @@
 """
-Appointment Booking — AgentDuet + Gemini Live + Google Calendar.
+Appointment Booking - AgentDuet + Gemini Live + Google Calendar.
+
+Amy books appointments for HealthFirst Clinic/Hospital.
 """
 
 from __future__ import annotations
@@ -43,12 +45,40 @@ logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 24000
 MODEL = "models/gemini-3.1-flash-live-preview"
+AGENT_NAME = "Amy"
+CLINIC_NAME = "HealthFirst Clinic"
 CALENDAR = build_calendar()
 _LAST_BOOKING: dict[str, Optional[Booking]] = {"value": None}
 
 genai_client = genai.Client(
     api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 )
+
+SYSTEM_INSTRUCTION = f"""Your name is {AGENT_NAME}. You are an appointment booking assistant for {CLINIC_NAME}/Hospital.
+You are warm, calm, and efficient at all times.
+
+Greet every caller with: Hi, thank you for calling {CLINIC_NAME}. I'm {AGENT_NAME}, your appointment assistant. I can help you book, reschedule, or cancel an appointment. What would you like to do today?
+
+Listen carefully to everything the caller says from their very first response. Many callers introduce themselves and state their full request in one message, for example: "Hi, I'm Claudia from HealthFirst, I want to book a general checkup tomorrow at 10 AM, my number is +65 XXXXXXXX." When a caller already provides any of these details, treat them as collected and do not ask again:
+- Patient full name
+- Phone number
+- Preferred appointment date
+- Preferred appointment time
+- Type of appointment: general checkup, specialist, or follow-up
+
+Only ask for details that are still missing. If the caller gave name, appointment type, date, and time upfront, acknowledge what you heard (for example: "Got it, Claudia — a general checkup tomorrow at 10 AM") and ask only for what is missing, usually the phone number.
+Never repeat a question for information the caller already clearly stated in this call.
+
+Availability workflow:
+1. When you have a preferred date (and ideally a time), call list_slots for that date before claiming a slot is open.
+2. Offer open times from list_slots. Never invent availability.
+3. Read back name, phone, date, time, and appointment type, then wait for the caller to explicitly confirm.
+4. Only after explicit confirmation, call book_appointment. Never say the appointment is booked until book_appointment returns ok=true.
+5. After a successful book, read back the booking_id once and close politely.
+
+If no slot works or the caller asks for a person, call escalate_to_human.
+Keep replies short and conversational — this is a phone call.
+"""
 
 
 def _upcoming_days(n: int = 5) -> list[date]:
@@ -73,7 +103,10 @@ def availability_blurb() -> str:
 
 LIST_TOOL = types.FunctionDeclaration(
     name="list_slots",
-    description="List open appointment times for an ISO date (YYYY-MM-DD).",
+    description=(
+        "List open appointment times for an ISO date (YYYY-MM-DD). "
+        "Call this before offering or confirming availability."
+    ),
     parameters={
         "type": "object",
         "properties": {
@@ -86,18 +119,23 @@ LIST_TOOL = types.FunctionDeclaration(
 BOOK_TOOL = types.FunctionDeclaration(
     name="book_appointment",
     description=(
-        "Book only after the caller explicitly confirms date, time, and service. "
-        "Never invent a confirmation — wait for this tool's success response."
+        "Book only after the caller explicitly confirms name, phone, date, time, "
+        "and appointment type. Never invent a confirmation — wait for this tool's "
+        "success response (ok=true)."
     ),
     parameters={
         "type": "object",
         "properties": {
-            "date": {"type": "string"},
+            "patient_name": {"type": "string"},
+            "date": {"type": "string", "description": "YYYY-MM-DD"},
             "time": {"type": "string", "description": "HH:MM 24h"},
-            "service": {"type": "string"},
-            "phone": {"type": "string"},
+            "service": {
+                "type": "string",
+                "description": "general checkup | specialist | follow-up",
+            },
+            "phone": {"type": "string", "description": "Patient phone, e.g. +65 XXXXXXXX"},
         },
-        "required": ["date", "time", "service", "phone"],
+        "required": ["patient_name", "date", "time", "service", "phone"],
     },
 )
 
@@ -111,8 +149,11 @@ ESCALATE_TOOL = types.FunctionDeclaration(
 async def _confirm_telegram(booking: Booking) -> None:
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat = os.getenv("TELEGRAM_CUSTOMER_CHAT_ID") or os.getenv("TELEGRAM_CHAT_ID")
+    if not token or not chat:
+        return
     text = (
-        f"*Appointment confirmed*\n"
+        f"*HealthFirst appointment confirmed*\n"
+        f"Patient: {booking.patient_name or '—'}\n"
         f"Booking ID: `{booking.booking_id}`\n"
         f"Calendar event ID: `{booking.event_id}`\n"
         f"Service: {booking.service}\n"
@@ -121,19 +162,21 @@ async def _confirm_telegram(booking: Booking) -> None:
     )
     if booking.html_link:
         text += f"\nLink: {booking.html_link}"
-    if not token or not chat:
-        logger.warning(
-            "Telegram skipped (set TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID). %s", text
-        )
-        return
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        resp = await client.post(
-            url,
-            json={"chat_id": chat, "text": text, "disable_web_page_preview": True},
-        )
-        if resp.status_code >= 400:
-            logger.error("Telegram send failed %s: %s", resp.status_code, resp.text)
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(
+                url,
+                json={
+                    "chat_id": chat,
+                    "text": text,
+                    "disable_web_page_preview": True,
+                },
+            )
+            if resp.status_code >= 400:
+                logger.error("Telegram send failed %s: %s", resp.status_code, resp.text)
+    except Exception:
+        logger.exception("Telegram confirmation failed")
 
 
 async def _dispatch_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -149,6 +192,7 @@ async def _dispatch_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
                 time_hhmm=args["time"],
                 service=args["service"],
                 phone=args["phone"],
+                patient_name=args.get("patient_name"),
             )
         except Exception as exc:
             logger.warning("Book failed: %s", exc)
@@ -161,6 +205,7 @@ async def _dispatch_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
             "event_id": booking.event_id,
             "when": booking.start.isoformat(),
             "service": booking.service,
+            "patient_name": booking.patient_name,
         }
 
     if name == "escalate_to_human":
@@ -191,8 +236,10 @@ class GeminiBookingBridge:
         self._call.on_hangup(self._on_hangup)
         await self._live.send_realtime_input(
             text=(
-                "Greet the caller briefly and help them book. "
-                f"Known open slots:\n{availability_blurb()}"
+                f"The phone call is connected. Greet the caller as {AGENT_NAME} "
+                f"from {CLINIC_NAME} and help them book. "
+                f"Known open slots (hint only — still call list_slots before offering):\n"
+                f"{availability_blurb()}"
             )
         )
         to_model = asyncio.create_task(self._to_model())
@@ -230,7 +277,7 @@ class GeminiBookingBridge:
                                 try:
                                     await self._call.send_audio(part.inline_data.data)
                                 except BufferFullError:
-                                    logger.warning("Buffer full — drop audio")
+                                    logger.warning("Buffer full - drop audio")
                                 except CallClosedError:
                                     return
                     if response.tool_call:
@@ -272,12 +319,9 @@ async def handle_call(call: Call) -> None:
         ),
         tools=[types.Tool(function_declarations=[LIST_TOOL, BOOK_TOOL, ESCALATE_TOOL])],
         system_instruction=(
-            "You book appointments by phone. Be concise. "
-            "Always call list_slots before offering times. "
-            "Only say a booking is confirmed after book_appointment returns ok=true; "
-            "then read back the booking_id to the caller. "
-            f"Caller's phone is {phone}. "
-            "If nothing works or they ask for a person, call escalate_to_human."
+            SYSTEM_INSTRUCTION
+            + f"\nCaller's line number on this call is {phone}; "
+            "prefer the phone number the patient states aloud when they give one."
         ),
     )
 
@@ -320,7 +364,7 @@ async def main() -> None:
         call_audio=CallAudioConfig(sample_rate=SAMPLE_RATE, buffer_size=1024 * 1024),
     )
     async with SessionManager(config) as sm:
-        logger.info("Appointment booking agent online")
+        logger.info("%s booking agent (%s) online", AGENT_NAME, CLINIC_NAME)
 
         @sm.on_incoming_call
         async def on_call(noti: IncomingCallNotification) -> None:

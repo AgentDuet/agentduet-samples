@@ -1,0 +1,56 @@
+{
+  "customers": [
+    {
+      "id": "cust-claudia",
+      "name": "Claudia",
+      "phone": "+65 XXXXXXXX",
+      "company": "Meridian Clinic patient",
+      "preferred_department": "support",
+      "notes": "Known patient with open intake tickets. Replace +65 XXXXXXXX with your test CLI."
+    },
+    {
+      "id": "cust-joy",
+      "name": "Joy",
+      "phone": "+65 XXXXXXXX",
+      "company": "Meridian Clinic patient",
+      "preferred_department": "billing",
+      "notes": "Prefers morning callbacks. Replace +65 XXXXXXXX with your test CLI."
+    },
+    {
+      "id": "cust-amy",
+      "name": "Amy",
+      "phone": "+65 XXXXXXXX",
+      "company": "Meridian Clinic patient",
+      "preferred_department": "general",
+      "notes": "Replace +65 XXXXXXXX with your test CLI."
+    },
+    {
+      "id": "cust-alex",
+      "name": "Alex",
+      "phone": "+65 XXXXXXXX",
+      "company": "Meridian Clinic patient",
+      "preferred_department": "sales",
+      "notes": "Asked about wellness packages. Replace +65 XXXXXXXX with your test CLI."
+    }
+  ],
+  "tickets": [
+    {
+      "id": "TKT-1001",
+      "customer_id": "cust-claudia",
+      "subject": "Lab results follow-up",
+      "status": "open"
+    },
+    {
+      "id": "TKT-1002",
+      "customer_id": "cust-claudia",
+      "subject": "Prescription refill request",
+      "status": "open"
+    },
+    {
+      "id": "TKT-1010",
+      "customer_id": "cust-joy",
+      "subject": "Invoice clarification for June visit",
+      "status": "open"
+    }
+  ]
+}

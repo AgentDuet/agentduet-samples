@@ -1,6 +1,6 @@
-# VibeRider Payment Assistant
+# Driver Payment Assistant
 
-Simple driver-facing phone agent for the fictional taxi company **VibeRider**.
+Driver-facing phone agent for the fictional taxi company **VibeRider**.
 It answers **only** from [`policy.md`](./policy.md) (payouts, tips, fees).
 
 ## Overview
@@ -9,17 +9,24 @@ It answers **only** from [`policy.md`](./policy.md) (payouts, tips, fees).
 - Refuse questions outside the policy
 - No calendar, CRM, or payment APIs — policy text only
 
-## Example questions this covers
+## Demo questions (match `policy.md`)
 
-- How do drivers get paid?
+Try these on a live call:
+
+- When do I get paid? / What’s the weekly payout schedule?
+- What’s the Instant Cash-Out fee? What’s the minimum / max / daily limit?
 - Do you take a cut of tips?
-- When is the weekly payout?
-- What is the instant payout fee?
+- Why is my money still pending?
+- What if Monday is a bank holiday?
+- How long do fare disputes take?
+- Where do I find my 1099 / tax forms?
+- Can I get paid by PayPal or Venmo?
 
 ## Stack
 
 | Piece | Choice |
 |---|---|
+| Telephony | AgentDuet (`SessionManager`, direct PCM) |
 | Voice AI | Gemini Live |
 | Knowledge | `policy.md` (local file) |
 

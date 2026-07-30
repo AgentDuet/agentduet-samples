@@ -1,4 +1,4 @@
-agentduet[nova-sonic]==1.0.0b9
+agentduet==1.0.0b10
 aws-sdk-bedrock-runtime
 smithy-aws-core
-python-dotenv>=1.0.0
+python-dotenv

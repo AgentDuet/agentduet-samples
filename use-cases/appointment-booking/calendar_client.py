@@ -27,6 +27,7 @@ class Booking:
     start: datetime
     end: datetime
     attendee_phone: str
+    patient_name: Optional[str] = None
     html_link: Optional[str] = None
 
 
@@ -43,6 +44,7 @@ class CalendarBackend:
         time_hhmm: str,
         service: str,
         phone: str,
+        patient_name: Optional[str] = None,
         summary: Optional[str] = None,
     ) -> Booking:
         raise NotImplementedError
@@ -70,6 +72,7 @@ class MemoryCalendar(CalendarBackend):
         time_hhmm: str,
         service: str,
         phone: str,
+        patient_name: Optional[str] = None,
         summary: Optional[str] = None,
     ) -> Booking:
         key = f"{day.isoformat()}|{time_hhmm}"
@@ -88,6 +91,7 @@ class MemoryCalendar(CalendarBackend):
             start=start,
             end=end,
             attendee_phone=phone,
+            patient_name=patient_name,
         )
 
 
@@ -146,6 +150,7 @@ class GoogleCalendar(CalendarBackend):
         time_hhmm: str,
         service: str,
         phone: str,
+        patient_name: Optional[str] = None,
         summary: Optional[str] = None,
     ) -> Booking:
         if time_hhmm not in self.list_open_slots(day, limit=20):
@@ -154,15 +159,23 @@ class GoogleCalendar(CalendarBackend):
         start = datetime(day.year, day.month, day.day, hour, minute, tzinfo=TZ)
         end = start + timedelta(minutes=DURATION_MIN)
         booking_id = f"BK-{uuid.uuid4().hex[:8].upper()}"
+        name_bit = f" - {patient_name}" if patient_name else ""
         body = {
-            "summary": summary or f"{service} ({booking_id})",
+            "summary": summary or f"HealthFirst {service}{name_bit} ({booking_id})",
             "description": (
-                f"Booking ID: {booking_id}\nPhone: {phone}\nService: {service}"
+                f"Booking ID: {booking_id}\n"
+                f"Patient: {patient_name or '—'}\n"
+                f"Phone: {phone}\n"
+                f"Service: {service}"
             ),
             "start": {"dateTime": start.isoformat(), "timeZone": str(TZ)},
             "end": {"dateTime": end.isoformat(), "timeZone": str(TZ)},
             "extendedProperties": {
-                "private": {"booking_id": booking_id, "phone": phone}
+                "private": {
+                    "booking_id": booking_id,
+                    "phone": phone,
+                    "patient_name": patient_name or "",
+                }
             },
         }
         created = (
@@ -177,6 +190,7 @@ class GoogleCalendar(CalendarBackend):
             start=start,
             end=end,
             attendee_phone=phone,
+            patient_name=patient_name,
             html_link=created.get("htmlLink"),
         )
 
@@ -188,6 +202,6 @@ def build_calendar() -> CalendarBackend:
         logger.info("Using Google Calendar API (%s)", cal_id)
         return GoogleCalendar(Path(creds), cal_id)
     logger.warning(
-        "GOOGLE_CALENDAR_CREDENTIALS missing — using in-memory demo calendar"
+        "GOOGLE_CALENDAR_CREDENTIALS missing - using in-memory demo calendar"
     )
     return MemoryCalendar()

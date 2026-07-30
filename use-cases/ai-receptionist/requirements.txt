@@ -1,4 +1,4 @@
-agentduet[qwen]==1.0.0b9
+agentduet==1.0.0b10
 websockets>=15.0.1
 soxr
 numpy

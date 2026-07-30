@@ -1,7 +1,7 @@
 # AgentDuet use-case samples
 
 Runnable voice agents for common telephony patterns, built on
-[`agentduet` 1.0.0b9](https://pypi.org/project/agentduet/1.0.0b9/).
+[`agentduet` 1.0.0b10](https://pypi.org/project/agentduet/1.0.0b10/).
 
 Each use case is self-contained: `README.md`, `main.py`, `requirements.txt`,
 and `.env.example`.
@@ -10,12 +10,13 @@ and `.env.example`.
 
 | Folder | What it does | AI model |
 |---|---|---|
-| [`customer-support`](./customer-support) | Answer FAQs, open tickets, escalate to a human | **OpenAI Realtime** |
-| [`appointment-booking`](./appointment-booking) | Book against Google Calendar; confirm with booking IDs | **Gemini Live** |
-| [`medical-pre-triage`](./medical-pre-triage) | Symptom intake and urgency guidance (not a diagnosis) | **Amazon Nova Sonic** |
-| [`database-lookup`](./database-lookup) | CRM lookup by caller number, personalize, route | **Qwen Omni** |
-| [`human-escalation`](./human-escalation) | AI-first talk; escalate with saved context | **Grok Voice** |
-| [`viberider-payment-assistant`](./viberider-payment-assistant) | VibeRider driver payment Q&A from a fixed policy file | **Gemini Live** |
+| [`medical-pre-triage`](./medical-pre-triage) | CareLine symptom intake and urgency guidance (not a diagnosis) | **Amazon Nova Sonic** |
+| [`appointment-booking`](./appointment-booking) | HealthFirst Clinic booking with Amy; Calendar + optional Telegram | **Gemini Live** |
+| [`customer-support`](./customer-support) | VibeRider Resolve — rider/driver lost items & complaints | **Amazon Nova Sonic** |
+| [`ai-receptionist`](./ai-receptionist) | Meridian Clinic CRM lookup, personalize, human handoff | **Qwen Omni** |
+| [`virtual-assistant`](./virtual-assistant) | Sarah — Apex Retail store policy Q&A from a fixed knowledge base | **OpenAI Realtime** |
+| [`human-escalation`](./human-escalation) | VibeRider support first; escalate with saved context | **Grok Voice** |
+| [`driver-payment-assistant`](./driver-payment-assistant) | VibeRider driver payment Q&A from a fixed policy file | **Gemini Live** |
 
 ## Prerequisites
 

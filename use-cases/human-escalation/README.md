@@ -1,14 +1,16 @@
-# AI Agent with Human Escalation
+# AI Agent with Human Escalation — VibeRider Support
 
-Grok Voice handles the call first. When the caller is stuck, frustrated, or asks
-for a person, the agent saves conversation context and hands off with
-`connect()` → `close()`.
+**Alex** answers as **VibeRider** phone support on Grok Voice. When the caller is
+stuck, frustrated, or asks for a person, the agent saves conversation context
+and hands off with `connect()` → `close()`.
 
 ## Overview
 
 - AI-first realtime conversation (Grok Voice)
+- **VibeRider** support branding
 - Tools: `save_context_and_escalate`, `hang_up`
 - Context JSON written under `data/` for the human agent
+- Barge-in uses `caller.audio_stream` + `clear_send_audio_buffer`
 - Clean step-out after a successful `connect`
 
 **State flow:** `PENDING → ANSWERED → CONNECTED →` agent leaves (or close if resolved)
@@ -17,7 +19,8 @@ for a person, the agent saves conversation context and hands off with
 
 | Piece | Choice |
 |---|---|
-| Voice AI | xAI Grok Voice (`grok-voice-latest`) |
+| Voice AI | xAI Grok Voice (`grok-voice-think-fast-1.0`) |
+| Realtime URL | `wss://api.x.ai/v1/realtime?model=…` |
 
 ## Run
 
@@ -29,3 +32,6 @@ python main.py
 ```
 
 See [`.env.example`](./.env.example) for every variable this agent reads.
+
+Uses `grok-voice-think-fast-1.0`, the Grok Realtime WebSocket URL, barge-in buffer
+flush, and a warm connect before `answer()`.

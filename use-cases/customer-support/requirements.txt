@@ -1,3 +1,5 @@
-agentduet==1.0.0b9
-openai-agents>=0.0.17
-python-dotenv>=1.0.0
+agentduet==1.0.0b10
+aws-sdk-bedrock-runtime
+smithy-aws-core
+python-dotenv
+requests

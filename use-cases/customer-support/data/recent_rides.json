@@ -1,0 +1,38 @@
+[
+  {
+    "ride_id": "VR88421",
+    "completed_at": "2026-07-28T09:15:00+08:00",
+    "pickup": "Marina Bay Sands",
+    "dropoff": "Changi Airport Terminal 3",
+    "rider_name": "Claudia",
+    "driver_name": "Joy",
+    "vehicle": "Toyota Prius · SML1234A"
+  },
+  {
+    "ride_id": "VR88455",
+    "completed_at": "2026-07-28T11:40:00+08:00",
+    "pickup": "ION Orchard",
+    "dropoff": "Holland Village",
+    "rider_name": "Amy",
+    "driver_name": "Alex",
+    "vehicle": "Hyundai Ioniq · SML5678B"
+  },
+  {
+    "ride_id": "VR88490",
+    "completed_at": "2026-07-29T18:05:00+08:00",
+    "pickup": "Bugis Junction",
+    "dropoff": "Tiong Bahru Market",
+    "rider_name": "Alex",
+    "driver_name": "Claudia",
+    "vehicle": "BYD Atto 3 · SML9012C"
+  },
+  {
+    "ride_id": "VR88510",
+    "completed_at": "2026-07-30T07:50:00+08:00",
+    "pickup": "Jurong East MRT",
+    "dropoff": "City General Hospital",
+    "rider_name": "Joy",
+    "driver_name": "Amy",
+    "vehicle": "Toyota Corolla Cross · SML3456D"
+  }
+]

@@ -1,7 +1,7 @@
 """
-VibeRider Payment Assistant — AgentDuet + Gemini Live.
+Driver Payment Assistant - AgentDuet + Gemini Live.
 
-Answers driver payout questions only from policy.md.
+Demo brand: VibeRider. Answers driver payout questions only from policy.md.
 """
 
 from __future__ import annotations
@@ -54,10 +54,13 @@ Speak briefly. Introduce yourself as VibeRider payments help.
 CRITICAL RULES:
 - Answer ONLY using the policy document below.
 - If the answer is not in the policy, say you do not have that information
-  and suggest Help → Payouts in the driver app.
+  and suggest Wallet → Help → Pay & wallet in the driver app (or escalate
+  per the policy).
 - Never invent fees, tip cuts, payout days, or bank timelines.
 - Never change account details or process payouts on this call.
-- Tips: the policy says riders' tips go 100% to the driver; VibeRider does not cut tips.
+- Tips: riders' tips go 100% to the driver; VibeRider does not cut tips.
+- Instant Cash-Out fee is $1.99 flat when stated in the policy; weekly
+  payout initiates on Monday with typical bank deposit by Wednesday.
 
 === POLICY START ===
 {POLICY_TEXT}
@@ -124,7 +127,7 @@ class PolicyBridge:
                                 try:
                                     await self._call.send_audio(part.inline_data.data)
                                 except BufferFullError:
-                                    logger.warning("Buffer full — drop audio")
+                                    logger.warning("Buffer full - drop audio")
                                 except CallClosedError:
                                     return
         except CallClosedError:
@@ -163,7 +166,7 @@ async def main() -> None:
         call_audio=CallAudioConfig(sample_rate=SAMPLE_RATE, buffer_size=1024 * 1024),
     )
     async with SessionManager(config) as sm:
-        logger.info("VibeRider payment assistant online")
+        logger.info("Driver payment assistant online")
 
         @sm.on_incoming_call
         async def on_call(noti: IncomingCallNotification) -> None:

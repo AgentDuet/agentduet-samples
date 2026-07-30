@@ -1,7 +1,14 @@
 .env
 .venv/
-**/data/
 __pycache__/
 *.pyc
 .Python
 *.wav
+
+# Runtime CRM / ticket artifacts (keep seed JSON tracked)
+**/data/cases/
+**/data/followups/*.json
+**/data/crm.sqlite
+**/data/reception_calls.json
+**/data/leads.json
+**/data/*.ticket.json

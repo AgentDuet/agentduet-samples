@@ -1,7 +1,7 @@
 """
-Human Escalation — AgentDuet + Grok Voice.
+Human Escalation - AgentDuet + Grok Voice.
 
-AI talks first; escalate_to_human saves context and bridges to staff.
+VibeRider support talks first; escalate_to_human saves context and bridges to staff.
 """
 
 from __future__ import annotations
@@ -42,17 +42,21 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 24000
-GROK_MODEL = "grok-voice-latest"
-GROK_URL = f"wss://api.x.ai/v1/realtime?model={GROK_MODEL}"
+GROK_MODEL = "grok-voice-think-fast-1.0"
+GROK_REALTIME_URL = f"wss://api.x.ai/v1/realtime?model={GROK_MODEL}"
 GROK_VOICE = os.environ.get("GROK_VOICE", "leo").lower()
-CONTEXT_DIR = Path(__file__).resolve().parent / "data"
+AGENT_NAME = "Alex"
+BRAND = "VibeRider"
+CONTEXT_DIR = HERE / "data"
 CONTEXT_DIR.mkdir(parents=True, exist_ok=True)
 
 SYSTEM_PROMPT = (
-    "You are a helpful phone support agent. Keep replies short and conversational. "
-    "Handle common FAQ yourself. If the caller is frustrated, asks for a human, "
-    "or needs something outside your abilities, call save_context_and_escalate with "
-    "a concise summary. When the caller is done and says goodbye, call hang_up."
+    f"Your name is {AGENT_NAME}. You are a {BRAND} phone support agent. "
+    "Keep replies short and conversational. Handle common FAQ yourself "
+    f"(account access, trip receipts, app troubleshooting, {BRAND} wallet basics). "
+    "If the caller is frustrated, asks for a human, or needs something outside "
+    "your abilities, call save_context_and_escalate with a concise summary. "
+    "When the caller is done and says goodbye, call hang_up."
 )
 
 TOOLS = [
@@ -82,13 +86,18 @@ TOOLS = [
     {
         "type": "function",
         "name": "hang_up",
-        "description": "End the call after a brief goodbye.",
+        "description": (
+            "End the phone call. Use when the caller asks to hang up, "
+            "end the call, or says goodbye and wants to leave."
+        ),
         "parameters": {"type": "object", "properties": {}, "required": []},
     },
 ]
 
 
 class GrokEscalationBridge:
+    """Bidirectional audio bridge: AgentDuet Call ↔ xAI Grok Realtime."""
+
     def __init__(self, call: Call, ws: ClientConnection):
         self._call = call
         self._ws = ws
@@ -98,7 +107,9 @@ class GrokEscalationBridge:
         self._audio_queue: asyncio.Queue[tuple[int, bytes] | None] = asyncio.Queue()
         self._active_response_id: Optional[str] = None
         self._cancelled: set[str] = set()
-        self._tasks: list[asyncio.Task] = []
+        self._send_task: Optional[asyncio.Task] = None
+        self._recv_task: Optional[asyncio.Task] = None
+        self._playback_task: Optional[asyncio.Task] = None
 
     async def _on_hangup(self, _evt: Any) -> None:
         self._terminated = True
@@ -106,7 +117,7 @@ class GrokEscalationBridge:
             await self._ws.close()
         except Exception:
             pass
-        for t in self._tasks:
+        for t in (self._send_task, self._recv_task, self._playback_task):
             if t and not t.done():
                 t.cancel()
                 try:
@@ -122,21 +133,24 @@ class GrokEscalationBridge:
                 {
                     "type": "response.create",
                     "response": {
-                        "instructions": "Greet the caller briefly and ask how you can help."
+                        "instructions": (
+                            f"Greet the caller warmly. Introduce yourself as {AGENT_NAME} "
+                            f"from {BRAND} support and ask how you can help today."
+                        )
                     },
                 }
             )
         )
-        playback = asyncio.create_task(self._playback())
-        send = asyncio.create_task(self._stream_up())
-        recv = asyncio.create_task(self._receive())
-        self._tasks = [playback, send, recv]
-        await asyncio.gather(send, recv, return_exceptions=True)
-        self._audio_queue.put_nowait(None)
-        try:
-            await playback
-        except asyncio.CancelledError:
-            pass
+        self._playback_task = asyncio.create_task(self._playback())
+        self._send_task = asyncio.create_task(self._stream_up())
+        self._recv_task = asyncio.create_task(self._receive())
+        await asyncio.gather(self._send_task, self._recv_task, return_exceptions=True)
+        if self._playback_task and not self._playback_task.done():
+            self._audio_queue.put_nowait(None)
+            try:
+                await self._playback_task
+            except asyncio.CancelledError:
+                pass
         return self._escalate
 
     async def _configure(self) -> None:
@@ -183,6 +197,11 @@ class GrokEscalationBridge:
                 )
         except (CallClosedError, ConnectionClosed):
             pass
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Error streaming caller audio to Grok")
+            raise
 
     async def _playback(self) -> None:
         while True:
@@ -194,8 +213,12 @@ class GrokEscalationBridge:
                 continue
             try:
                 await self._call.send_audio(audio)
-            except (BufferFullError, CallClosedError):
+            except BufferFullError:
+                logger.warning("Outgoing buffer full - dropping chunk")
+            except CallClosedError:
                 break
+            except asyncio.CancelledError:
+                raise
 
     async def _flush(self) -> None:
         self._playback_gen += 1
@@ -208,7 +231,7 @@ class GrokEscalationBridge:
         try:
             await self._call.clear_send_audio_buffer()
         except CallClosedError:
-            pass
+            return
 
     async def _tool_output(self, call_id: str, output: dict[str, Any]) -> None:
         await self._ws.send(
@@ -228,6 +251,7 @@ class GrokEscalationBridge:
         path = CONTEXT_DIR / f"{self._call.id}.json"
         payload = {
             "call_id": self._call.id,
+            "brand": BRAND,
             "caller": self._call.participant.value if self._call.participant else None,
             "saved_at": datetime.now(timezone.utc).isoformat(),
             **args,
@@ -235,6 +259,24 @@ class GrokEscalationBridge:
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         logger.info("Escalation context saved %s", path)
         return path
+
+    async def _agent_hang_up(self) -> None:
+        logger.info("Agent hanging up call %s", self._call.id)
+        try:
+            for _ in range(40):  # up to ~4s for goodbye audio to drain
+                if await self._call.get_send_audio_buffer_size() == 0:
+                    break
+                await asyncio.sleep(0.1)
+        except CallClosedError:
+            return
+        result = await self._call.close()
+        if not result:
+            logger.error(
+                "Hang up failed for %s: %s (%s)",
+                self._call.id,
+                result.error_message,
+                result.error_code,
+            )
 
     async def _receive(self) -> None:
         try:
@@ -246,27 +288,43 @@ class GrokEscalationBridge:
 
                 if etype == "response.created":
                     self._active_response_id = event.get("response", {}).get("id")
+
                 elif etype == "input_audio_buffer.speech_started":
                     try:
                         buf = await self._call.get_send_audio_buffer_size()
                     except CallClosedError:
                         buf = 0
-                    if self._active_response_id or buf or self._audio_queue.qsize():
-                        if self._active_response_id:
+                    should_flush = (
+                        self._active_response_id is not None
+                        or buf > 0
+                        or self._audio_queue.qsize() > 0
+                    )
+                    if should_flush:
+                        if self._active_response_id is not None:
                             self._cancelled.add(self._active_response_id)
+                        logger.info("Caller interrupted - stopping playback")
                         await self._flush()
+
                 elif etype == "response.done":
                     rid = event.get("response", {}).get("id")
                     if rid:
                         self._cancelled.discard(rid)
                     if rid == self._active_response_id:
                         self._active_response_id = None
+
                 elif etype in ("response.output_audio.delta", "response.audio.delta"):
                     rid = event.get("response_id")
                     if rid and rid in self._cancelled:
                         continue
+                    if (
+                        rid
+                        and self._active_response_id
+                        and rid != self._active_response_id
+                    ):
+                        continue
                     audio = base64.b64decode(event["delta"])
                     self._audio_queue.put_nowait((self._playback_gen, audio))
+
                 elif etype == "response.function_call_arguments.done":
                     name = event.get("name")
                     call_id = event["call_id"]
@@ -285,7 +343,8 @@ class GrokEscalationBridge:
                                     "response": {
                                         "instructions": (
                                             "Tell the caller you are connecting them "
-                                            "to a specialist now. Keep it to one sentence."
+                                            f"to a {BRAND} specialist now. "
+                                            "Keep it to one sentence."
                                         )
                                     },
                                 }
@@ -295,25 +354,29 @@ class GrokEscalationBridge:
                         return
                     if name == "hang_up":
                         await self._tool_output(call_id, {"status": "hanging_up"})
-                        for _ in range(40):
-                            try:
-                                if await self._call.get_send_audio_buffer_size() == 0:
-                                    break
-                            except CallClosedError:
-                                return
-                            await asyncio.sleep(0.1)
-                        await self._call.close()
+                        await self._agent_hang_up()
                         return
+                    logger.warning("Unknown tool: %s", name)
+
                 elif etype == "error":
                     logger.error("Grok error: %s", event)
+
         except (CallClosedError, ConnectionClosed):
             pass
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Error receiving from Grok")
+            raise
+        finally:
+            self._audio_queue.put_nowait(None)
 
 
 async def handle_call(call: Call) -> None:
     try:
+        # Warm the WebSocket before answer() so the greeting is not delayed.
         async with websockets.connect(
-            GROK_URL,
+            GROK_REALTIME_URL,
             additional_headers={
                 "Authorization": f"Bearer {os.environ['XAI_API_KEY']}"
             },
@@ -330,7 +393,12 @@ async def handle_call(call: Call) -> None:
             escalate = await GrokEscalationBridge(call, ws).run()
     except InvalidStatus as e:
         body = getattr(e.response, "body", b"") or b""
-        logger.error("Grok rejected: %s", body.decode("utf-8", errors="replace"))
+        detail = body.decode("utf-8", errors="replace") if body else str(e)
+        logger.error(
+            "Grok WebSocket rejected (HTTP %s). Check XAI_API_KEY - %s",
+            e.response.status_code,
+            detail,
+        )
         return
 
     if not escalate:
@@ -357,10 +425,11 @@ async def main() -> None:
         call_audio=CallAudioConfig(sample_rate=SAMPLE_RATE, buffer_size=1024 * 1024),
     )
     async with SessionManager(config) as sm:
-        logger.info("Human escalation agent online")
+        logger.info("%s support escalation agent online", BRAND)
 
         @sm.on_incoming_call
         async def on_call(noti: IncomingCallNotification) -> None:
+            logger.info("Incoming call %s from %s", noti.call_id, noti.participant)
             session = await sm.open_session(new_session_id(), noti.subscriber)
             call = await session.process_call(noti)
             try:

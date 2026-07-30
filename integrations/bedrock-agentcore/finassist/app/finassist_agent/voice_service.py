@@ -62,7 +62,7 @@ def _caller_number(call: Call) -> str:
 async def attach_inbound_call(sm: SessionManager, noti: IncomingCallNotification) -> Call:
     """Open an ephemeral session and attach it to the notified inbound call.
 
-    agentduet 1.0.0b9 pattern: ``open_session`` + ``process_call`` (no client registry).
+    agentduet 1.0.0b10 pattern: ``open_session`` + ``process_call`` (no client registry).
     """
     session = await sm.open_session(new_session_id(), noti.subscriber)
     try:
