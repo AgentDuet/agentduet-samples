@@ -1,0 +1,5 @@
+agentduet[qwen]==1.0.0b9
+websockets>=15.0.1
+soxr
+numpy
+python-dotenv>=1.0.0
