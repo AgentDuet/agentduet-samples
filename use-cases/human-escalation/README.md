@@ -13,7 +13,7 @@ and hands off with `connect()` → `close()`.
 - Barge-in uses `caller.audio_stream` + `clear_send_audio_buffer`
 - Clean step-out after a successful `connect`
 
-**State flow:** `PENDING → ANSWERED → CONNECTED →` agent leaves (or close if resolved)
+**State flow:** `NEW → LIVE` (`answer()`) → `connect()` (still `LIVE`) → agent `close()` → `TERMINATED` (or `close()` without handoff if resolved)
 
 ## Stack
 

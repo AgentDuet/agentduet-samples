@@ -13,7 +13,7 @@ Brand: **Meridian Clinic**.
 - Tools: `get_open_tickets`, `record_intent`, `update_lead_name`, `transfer_to_human`
 - Handoff: `connect()` rings original callee, then `close()` leaves the AI
 
-**State flow:** `PENDING → ANSWERED → CONNECTED →` agent leaves
+**State flow:** `NEW → LIVE` (`answer()`) → `connect()` (still `LIVE`) → agent `close()` → `TERMINATED`
 
 ## CRM backends
 

@@ -16,7 +16,7 @@ confirm, and optionally sends a Telegram confirmation.
 - Optional Telegram confirm (skipped silently if tokens are missing)
 - Fallback: `connect()` staff → `close()` when the caller needs a human
 
-**State flow:** `PENDING → ANSWERED →` close, or escalate `→ CONNECTED →` close
+**State flow:** `NEW → LIVE` (`answer()`) → `TERMINATED` on success (`close()`), or `connect()` then agent `close()` for handoff
 
 ## Stack
 

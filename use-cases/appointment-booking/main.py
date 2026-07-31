@@ -47,6 +47,7 @@ SAMPLE_RATE = 24000
 MODEL = "models/gemini-3.1-flash-live-preview"
 AGENT_NAME = "Amy"
 CLINIC_NAME = "HealthFirst Clinic"
+HANDOFF_GRACE_SECONDS = float(os.getenv("HANDOFF_AUDIO_GRACE_SECONDS", "3"))
 CALENDAR = build_calendar()
 _LAST_BOOKING: dict[str, Optional[Booking]] = {"value": None}
 
@@ -299,6 +300,12 @@ class GeminiBookingBridge:
                             function_responses=responses
                         )
                         if self._escalate:
+                            logger.info(
+                                "Escalation requested — waiting %.1fs for transfer audio",
+                                HANDOFF_GRACE_SECONDS,
+                            )
+                            await asyncio.sleep(HANDOFF_GRACE_SECONDS)
+                            self._terminated = True
                             return
         except CallClosedError:
             pass
@@ -336,8 +343,11 @@ async def handle_call(call: Call) -> None:
             return
         escalate = await GeminiBookingBridge(call, live).run()
 
-    if _LAST_BOOKING["value"] and not escalate:
-        await call.close()
+    if not escalate:
+        try:
+            await call.close()
+        except CallClosedError:
+            pass
         return
 
     # Human fallback
