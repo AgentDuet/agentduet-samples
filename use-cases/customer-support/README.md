@@ -1,9 +1,9 @@
 # VibeRider Resolve (customer-support)
 
 Voice support for **riders and drivers**: lost items and ride complaints.  
-Pipedrive ticket created **after the call ends** (or mock JSON when unconfigured).
+Pipedrive ticket created **after the call ends** (or mock JSON if Pipedrive is unset).
 
-Caller phone = inbound CLI from `call.participant` / notification — never asked for callback.
+Caller phone comes from the inbound CLI (`call.participant` / notification).
 
 Requires **AgentDuet `1.0.0b10`**, **Python 3.12+**, and **Amazon Nova 2 Sonic** on Bedrock.
 
@@ -13,8 +13,6 @@ Requires **AgentDuet `1.0.0b10`**, **Python 3.12+**, and **Amazon Nova 2 Sonic**
 |--------|------|----------------------|
 | **Rider** | Item left in car (phone, bag, wallet, keys) | `rude_driver`, `unsafe_driving`, `dirty_vehicle`, `bad_route`, `refused_stop` |
 | **Driver** | — | `abusive_rider`, `vehicle_damage` |
-
-Out of scope: payment/fare disputes, no-shows, ratings.
 
 ## Design: AI vs code
 

@@ -1,8 +1,8 @@
 # Sarah — Apex Retail Virtual Assistant
 
 Warm, professional phone support for the fictional store **Apex Retail**.
-Answers **only** from [`knowledge.md`](./knowledge.md) (shipping, returns-adjacent
-policies, account basics). No CRM, Pipedrive, or human `connect()` handoff.
+Answers from [`knowledge.md`](./knowledge.md) (shipping, returns-adjacent
+policies, account basics).
 
 Requires **AgentDuet `1.0.0b10`** and **OpenAI Realtime** via `openai-agents`.
 
@@ -10,7 +10,7 @@ Requires **AgentDuet `1.0.0b10`** and **OpenAI Realtime** via `openai-agents`.
 
 - Load `knowledge.md` into the Realtime system instructions
 - Greet as Sarah from Apex Retail on answer (kickoff message)
-- Brief 1–2 sentence answers; refuse unknown facts
+- Brief 1–2 sentence answers from the knowledge base
 - Optional: `capture_followup_email` writes JSON under `data/followups/`
 - `hang_up` drains the send buffer and closes the call
 

@@ -6,8 +6,7 @@ It answers **only** from [`policy.md`](./policy.md) (payouts, tips, fees).
 ## Overview
 
 - Load `policy.md` into the Gemini Live system instruction
-- Refuse questions outside the policy
-- No calendar, CRM, or payment APIs — policy text only
+- Answer payout and tip questions from that policy
 
 ## Demo questions (match `policy.md`)
 
