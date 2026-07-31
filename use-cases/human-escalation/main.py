@@ -402,6 +402,10 @@ async def handle_call(call: Call) -> None:
         return
 
     if not escalate:
+        try:
+            await call.close()
+        except CallClosedError:
+            pass
         return
 
     try:

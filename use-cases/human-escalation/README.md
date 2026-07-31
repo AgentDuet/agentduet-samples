@@ -34,4 +34,4 @@ python main.py
 See [`.env.example`](./.env.example) for every variable this agent reads.
 
 Uses `grok-voice-think-fast-1.0`, the Grok Realtime WebSocket URL, barge-in buffer
-flush, and a warm connect before `answer()`.
+flush, and opens the Grok WebSocket before `answer()`.
