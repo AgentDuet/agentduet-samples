@@ -1,0 +1,5 @@
+agentduet==1.0.0b10
+google-genai>=1.57.0
+langgraph>=0.4.0
+langchain-core>=0.3.0
+python-dotenv>=1.0.0

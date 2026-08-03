@@ -1,0 +1,34 @@
+[
+  {
+    "order_id": "1001",
+    "zip_code": "94107",
+    "customer_name": "Alex Chen",
+    "fulfillment_status": "unfulfilled",
+    "shipping_status": "label_created",
+    "shipping_summary": "Order 1001 is packed at the West warehouse and a shipping label was just created. It should leave within 24 hours.",
+    "items": ["Trail Runner shoes", "Grip socks"],
+    "ship_to": {
+      "line1": "120 Stillman St",
+      "line2": "Apt 4B",
+      "city": "San Francisco",
+      "state": "CA",
+      "zip": "94107"
+    }
+  },
+  {
+    "order_id": "1002",
+    "zip_code": "10001",
+    "customer_name": "Jordan Lee",
+    "fulfillment_status": "fulfilled",
+    "shipping_status": "out_for_delivery",
+    "shipping_summary": "Order 1002 left the hub this morning and is out for delivery today. Expected by 8 PM.",
+    "items": ["Everyday tote", "Water bottle"],
+    "ship_to": {
+      "line1": "350 5th Ave",
+      "line2": "Floor 21",
+      "city": "New York",
+      "state": "NY",
+      "zip": "10001"
+    }
+  }
+]
