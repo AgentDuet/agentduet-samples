@@ -8,7 +8,7 @@ Inbound voice agent for **order tracking** and gated order modifications.
 
 No live store APIs and no WhatsApp/SMS setup. Seed orders live in [`data/orders.json`](data/orders.json).
 
-Requires **AgentDuet `1.0.0b10`**, **Python 3.12+**, and a **Gemini API key**.
+Requires **AgentDuet `1.0.0`**, **Python 3.12+**, and a **Gemini API key**.
 
 ## Demo orders
 
@@ -48,7 +48,7 @@ keyed by call id.
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-pip install --pre -r requirements.txt
+pip install -r requirements.txt
 cp .env.example .env
 ```
 

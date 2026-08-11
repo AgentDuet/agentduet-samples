@@ -44,7 +44,7 @@ Replace the placeholders in `data/customers.json` with your test CLI numbers bef
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
-pip install --pre -r requirements.txt
+pip install -r requirements.txt
 cp .env.example .env   # AGENTDUET_*, DASHSCOPE_API_KEY
 python main.py
 ```

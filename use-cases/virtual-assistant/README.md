@@ -4,7 +4,7 @@ Warm, professional phone support for the fictional store **Apex Retail**.
 Answers from [`knowledge.md`](./knowledge.md) (shipping, returns-adjacent
 policies, account basics).
 
-Requires **AgentDuet `1.0.0b10`** and **OpenAI Realtime** via `openai-agents`.
+Requires **AgentDuet `1.0.0`** and **OpenAI Realtime** via `openai-agents`.
 
 ## Overview
 
@@ -27,7 +27,7 @@ Requires **AgentDuet `1.0.0b10`** and **OpenAI Realtime** via `openai-agents`.
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-pip install --pre -r requirements.txt
+pip install -r requirements.txt
 cp .env.example .env
 ```
 

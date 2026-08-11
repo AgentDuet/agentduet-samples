@@ -1,7 +1,7 @@
 # AgentDuet use-case samples
 
 Runnable voice agents for common telephony patterns, built on
-[`agentduet` 1.0.0b10](https://pypi.org/project/agentduet/1.0.0b10/).
+[`agentduet` 1.0.0](https://pypi.org/project/agentduet/1.0.0/).
 
 Each use case is self-contained: `README.md`, `main.py`, `requirements.txt`,
 and `.env.example`.

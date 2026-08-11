@@ -5,7 +5,7 @@ Pipedrive ticket created **after the call ends** (or mock JSON if Pipedrive is u
 
 Caller phone comes from the inbound CLI (`call.participant` / notification).
 
-Requires **AgentDuet `1.0.0b10`**, **Python 3.12+**, and **Amazon Nova 2 Sonic** on Bedrock.
+Requires **AgentDuet `1.0.0`**, **Python 3.12+**, and **Amazon Nova 2 Sonic** on Bedrock.
 
 ## Supported cases
 
@@ -48,7 +48,7 @@ Caller speech ──► Amazon Nova 2 Sonic (talk + toolUse)
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-pip install --pre -r requirements.txt
+pip install -r requirements.txt
 cp .env.example .env
 ```
 

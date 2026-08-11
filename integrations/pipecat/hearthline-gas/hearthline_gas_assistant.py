@@ -287,7 +287,7 @@ async def handle_call(call: Call) -> None:
 
     # Capture on the call's event-loop thread. Used if a hangup handler ever runs
     # off-loop (sync → to_thread); async hangup handlers are awaited on this loop
-    # directly (agentduet Call._emit_event in 1.0.0b10).
+    # directly (agentduet Call._emit_event in 1.0.0).
     loop = asyncio.get_running_loop()
 
     transport = AgentDuetTransport(call)
@@ -390,7 +390,7 @@ async def handle_call(call: Call) -> None:
     )
     task_holder["task"] = task
 
-    # agentduet 1.0.0b10 Call._emit_event: async handlers are awaited on the loop;
+    # agentduet 1.0.0 Call._emit_event: async handlers are awaited on the loop;
     # sync handlers go through asyncio.to_thread. Prefer async so we stay on-loop.
     @call.on_hangup
     async def _on_remote_hangup(_evt) -> None:

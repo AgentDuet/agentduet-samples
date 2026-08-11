@@ -8,7 +8,7 @@ Inbound voice agent for a fictional residential gas utility.
 
 Answers only from inline `FACTS`. Out of scope → point to `https://hearthlineenergy.example.com` and **stay on the line**. Hang up only when the caller asks to end. Gas leak / CO → leave the area and call emergency services in their area (never recite a number).
 
-Requires **AgentDuet `1.0.0b10`**, **Python 3.12+**, and a **Gemini API key**.
+Requires **AgentDuet `1.0.0`**, **Python 3.12+**, and a **Gemini API key**.
 
 ## Design: AI vs Pipecat
 
@@ -38,7 +38,7 @@ Create the venv **outside** this directory. Pipecat pulls NLTK, which blocks imp
 cd agentduet-samples/integrations/pipecat/hearthline-gas
 python3.12 -m venv ~/venvs/hearthline-gas
 source ~/venvs/hearthline-gas/bin/activate
-pip install --pre -r requirements.txt
+pip install -r requirements.txt
 cp .env.example .env
 ```
 
@@ -84,7 +84,7 @@ Call your AgentDuet connector number.
 | File | Role |
 |------|------|
 | `hearthline_gas_assistant.py` | SessionManager + AgentDuet transport + Gemini Live pipeline |
-| `requirements.txt` | `agentduet==1.0.0b10`, `pipecat-ai[google]`, `python-dotenv` |
+| `requirements.txt` | `agentduet==1.0.0`, `pipecat-ai[google]`, `python-dotenv` |
 | `.env.example` | Connector + Gemini keys |
 
 ## Notes
