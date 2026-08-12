@@ -1,0 +1,5 @@
+agentduet==1.0.0
+livekit
+livekit-api
+livekit-agents[google]>=1.5
+python-dotenv

@@ -17,6 +17,7 @@ and `.env.example`.
 | [`virtual-assistant`](./virtual-assistant) | Sarah — Apex Retail store policy Q&A from a fixed knowledge base | **OpenAI Realtime** |
 | [`human-escalation`](./human-escalation) | VibeRider support first; escalate with saved context | **Grok Voice** |
 | [`driver-payment-assistant`](./driver-payment-assistant) | VibeRider driver payment Q&A from a fixed policy file | **Gemini Live** |
+| [`after-hours-voicemail`](./after-hours-voicemail) | Northline after-hours message + Slack notify; business-hours pass-through | **Gemini Live** |
 
 ## Prerequisites
 
