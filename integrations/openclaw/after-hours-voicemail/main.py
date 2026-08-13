@@ -60,19 +60,26 @@ genai_client = genai.Client(
 SYSTEM_INSTRUCTION = f"""Your name is {AGENT_NAME}. You are the after-hours phone
 attendant for {OFFICE_NAME}. The office is closed.
 
-Speak briefly and warmly. On connect, greet the caller, say the office is closed,
-and invite them to leave a message with:
+Speak slowly and warmly — do not rush. On connect, greet the caller, say the
+office is closed, and invite them to leave a message with:
 1. Their name
 2. A callback number (if different from the calling line)
 3. What they need help with
 
-When you have a clear message (name + reason at minimum), call leave_voicemail
-with a concise transcript summary. Do not invent details. After leave_voicemail
-returns ok=true, thank them, say the team will follow up on the next business
-day, then call end_call.
+Stay on the line until you have a name and a reason, or they clearly refuse.
+If they only greet you, ask you to slow down, or chat, keep asking for a
+voicemail. Do not hang up.
 
-If the caller only wants to know hours, tell them weekday business hours
-(typically 9–17 local) and offer to take a message anyway.
+When you have a name and a reason, call leave_voicemail with a concise
+transcript summary. Do not invent details. If they refuse to leave a message,
+still call leave_voicemail with whatever they said (or "caller declined").
+
+After leave_voicemail returns ok=true, thank them, say the team will follow up
+on the next business day, finish that goodbye, then call end_call.
+Never call end_call before leave_voicemail succeeds.
+
+If they only want hours, tell them weekday hours (typically 9–17 local) and
+still take a message.
 Never claim you will transfer them to a person on this call.
 Never place an outbound call.
 """
@@ -111,8 +118,9 @@ LEAVE_TOOL = types.FunctionDeclaration(
 END_TOOL = types.FunctionDeclaration(
     name="end_call",
     description=(
-        "End the call after the goodbye. Call only after leave_voicemail succeeds, "
-        "or if the caller declines to leave a message."
+        "End the call after the goodbye. Forbidden until leave_voicemail has "
+        "returned ok=true on this call. If the caller declines, call "
+        "leave_voicemail first with a declined/no-message summary."
     ),
     parameters={"type": "object", "properties": {}, "required": []},
 )
@@ -266,6 +274,7 @@ class VoicemailBridge:
         self._from_number = from_number
         self._terminated = False
         self._end = False
+        self._voicemail_ok = False
         self._tasks: list[asyncio.Task] = []
 
     async def _on_hangup(self, _evt: Any) -> None:
@@ -276,6 +285,28 @@ class VoicemailBridge:
             pass
         for t in self._tasks:
             t.cancel()
+
+    async def _hang_up(self) -> None:
+        """Drop the PSTN call after goodbye audio has left the send buffer."""
+        try:
+            for _ in range(50):
+                if await self._call.get_send_audio_buffer_size() == 0:
+                    break
+                await asyncio.sleep(0.1)
+        except CallClosedError:
+            return
+
+        self._terminated = True
+        # Inbound agent-only calls are ANSWERED: call.disconnect is INVALID_COMMAND.
+        result = await self._call.close()
+        if result:
+            logger.info("Call %s closed after end_call", self._call.id)
+            return
+        logger.error(
+            "close after end_call failed: %s (%s)",
+            result.error_message,
+            result.error_code,
+        )
 
     async def run(self) -> None:
         self._call.on_hangup(self._on_hangup)
@@ -329,11 +360,23 @@ class VoicemailBridge:
                         for fc in response.tool_call.function_calls:
                             args = dict(fc.args or {})
                             logger.info("tool %s(%s)", fc.name, args)
-                            result = await _dispatch_tool(
-                                fc.name,
-                                args,
-                                from_number=self._from_number,
-                            )
+                            if fc.name == "end_call" and not self._voicemail_ok:
+                                result = {
+                                    "ok": False,
+                                    "end": False,
+                                    "error": (
+                                        "leave_voicemail has not succeeded yet. "
+                                        "Take or record a declined message first."
+                                    ),
+                                }
+                            else:
+                                result = await _dispatch_tool(
+                                    fc.name,
+                                    args,
+                                    from_number=self._from_number,
+                                )
+                            if fc.name == "leave_voicemail" and result.get("ok"):
+                                self._voicemail_ok = True
                             if result.get("end"):
                                 self._end = True
                             responses.append(
@@ -347,12 +390,7 @@ class VoicemailBridge:
                             function_responses=responses
                         )
                         if self._end:
-                            await asyncio.sleep(HANDOFF_GRACE_SECONDS)
-                            self._terminated = True
-                            try:
-                                await self._call.disconnect()
-                            except Exception:
-                                logger.exception("disconnect after end_call failed")
+                            await self._hang_up()
                             return
         except CallClosedError:
             pass

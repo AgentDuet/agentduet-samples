@@ -1,9 +1,13 @@
 # OpenClaw — After-hours Voicemail → Slack
 
-Flagship AgentDuet ↔ [OpenClaw](https://docs.openclaw.ai/) integration.
+AgentDuet ↔ [OpenClaw](https://docs.openclaw.ai/) sample.
 
 **AgentDuet** owns the phone call. **Gemini Live** owns the conversation.
 **OpenClaw** delivers Slack via `openclaw message send`.
+
+Install and connect OpenClaw **before** this app. There is no OpenClaw pip package.
+See [Docs: OpenClaw integration](https://docs.agentduet.com/integrations/openclaw)
+for install, gateway, and Slack setup.
 
 ## Overview
 
@@ -85,5 +89,7 @@ after-hours-voicemail/
 ## Related
 
 - [Docs: OpenClaw integration](https://docs.agentduet.com/integrations/openclaw)
+- [OpenClaw install](https://docs.openclaw.ai/install/)
+- [OpenClaw Slack](https://docs.openclaw.ai/channels/slack)
 - [OpenClaw message CLI](https://docs.openclaw.ai/cli/message)
 - [Use-case baseline (Slack webhook)](../../../use-cases/after-hours-voicemail)
