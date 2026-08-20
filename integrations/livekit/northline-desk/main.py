@@ -41,11 +41,14 @@ logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 24000
 NUM_CHANNELS = 1
-# ~20 ms frames when buffering AgentDuet chunks for LiveKit
-FRAME_SAMPLES = 480
+# ~10 ms frames when buffering AgentDuet chunks for LiveKit
+FRAME_SAMPLES = 240
 AGENT_NAME = "agentduet-phone"
 # Simple energy gate to clear AgentDuet playback on barge-in
 BARGE_RMS_THRESHOLD = int(os.getenv("BARGE_RMS_THRESHOLD", "400"))
+# LiveKit publish/subscribe buffering (lower = less delay, more sensitive to jitter)
+LK_QUEUE_MS = int(os.getenv("LK_QUEUE_MS", "50"))
+LK_FRAME_MS = int(os.getenv("LK_FRAME_MS", "20"))
 
 
 def _require_env(*keys: str) -> None:
@@ -141,7 +144,9 @@ class PhoneLiveKitBridge:
             await self._room.connect(os.environ["LIVEKIT_URL"], token)
             logger.info("Bridge joined room %s", self._room_name)
 
-            self._source = rtc.AudioSource(SAMPLE_RATE, NUM_CHANNELS, queue_size_ms=200)
+            self._source = rtc.AudioSource(
+                SAMPLE_RATE, NUM_CHANNELS, queue_size_ms=LK_QUEUE_MS
+            )
             track = rtc.LocalAudioTrack.create_audio_track("phone-caller", self._source)
             await self._room.local_participant.publish_track(
                 track,
@@ -232,29 +237,43 @@ class PhoneLiveKitBridge:
                 logger.exception("stream to LiveKit failed")
 
     async def _from_livekit(self, track: rtc.Track) -> None:
+        stream = rtc.AudioStream.from_track(
+            track=track,
+            sample_rate=SAMPLE_RATE,
+            num_channels=NUM_CHANNELS,
+            frame_size_ms=LK_FRAME_MS,
+        )
         try:
-            stream = rtc.AudioStream.from_track(
-                track=track,
-                sample_rate=SAMPLE_RATE,
-                num_channels=NUM_CHANNELS,
-            )
-            async with stream:
-                async for event in stream:
-                    if self._terminated:
-                        break
-                    pcm = bytes(event.frame.data)
-                    if not pcm:
-                        continue
-                    self._agent_speaking = True
+            async for event in stream:
+                if self._terminated:
+                    break
+                pcm = bytes(event.frame.data)
+                if not pcm:
+                    continue
+                self._agent_speaking = True
+                try:
+                    await self._call.send_audio(pcm)
+                except BufferFullError:
+                    # Prefer dropping late audio over growing a multi-second backlog.
                     try:
-                        await self._call.send_audio(pcm)
-                    except BufferFullError:
-                        logger.warning("AgentDuet send buffer full; drop chunk")
+                        await self._call.clear_send_audio_buffer()
                     except CallClosedError:
                         return
+                    logger.warning("AgentDuet send buffer full; cleared and dropped chunk")
+                except CallClosedError:
+                    return
+                else:
+                    # Mark quiet once the AgentDuet playback queue is drained.
+                    try:
+                        if await self._call.get_send_audio_buffer_size() == 0:
+                            self._agent_speaking = False
+                    except Exception:
+                        pass
         except Exception:
             if not self._terminated:
                 logger.exception("stream from LiveKit failed")
+        finally:
+            await stream.aclose()
 
 
 async def handle_call(call: Call) -> None:

@@ -1,3 +1,0 @@
-agentduet==1.0.0
-google-genai
-python-dotenv

@@ -2,8 +2,7 @@
 Meridian Clinic AI receptionist — AgentDuet + Qwen Omni + CRM lookup.
 
 Known callers get a personalized greeting and open tickets; unknown callers
-become leads. Tools: get_open_tickets, record_intent, update_lead_name,
-transfer_to_human (connect + close).
+become leads. Tools: get_open_tickets, record_intent, update_lead_name, end_call.
 """
 
 from __future__ import annotations
@@ -55,7 +54,7 @@ BASE_DOMAIN = (
 )
 QWEN_WS_URL = f"wss://{BASE_DOMAIN}/api-ws/v1/realtime"
 MODEL = "qwen3.5-omni-flash-realtime"
-HANDOFF_GRACE_SECONDS = float(os.getenv("HANDOFF_AUDIO_GRACE_SECONDS", "3"))
+CLOSING_GRACE_SECONDS = float(os.getenv("CLOSING_AUDIO_GRACE_SECONDS", "3.5"))
 RECEPTION_CALLS_PATH = Path(
     os.getenv("RECEPTION_CALLS_PATH", str(HERE / "data" / "reception_calls.json"))
 ).resolve()
@@ -200,19 +199,10 @@ class Receptionist:
         self._customer = customer
         self._caller_phone = caller_phone
         self._terminated = False
-        self._transfer = asyncio.Event()
-        self._transfer_reason = ""
+        self._end_call = False
         self._classified_intent: str | None = None
         self._tool_calls: list[dict[str, Any]] = []
         self._tasks: list[asyncio.Task] = []
-
-    @property
-    def transfer_requested(self) -> bool:
-        return self._transfer.is_set()
-
-    @property
-    def transfer_reason(self) -> str:
-        return self._transfer_reason
 
     @property
     def classified_intent(self) -> str | None:
@@ -270,23 +260,23 @@ class Receptionist:
             caller_name = str(args.get("name", "")).strip()
             updated = await self._crm.update_lead_name(self._caller_phone, caller_name)
             result = {"updated": updated, "name": caller_name}
-        elif name == "transfer_to_human":
-            reason = str(args.get("reason", "Caller requested human agent")).strip()
-            department = str(args.get("department", "general"))
-            self._transfer_reason = f"{department}: {reason}"
-            result = {
-                "transfer": True,
-                "reason": reason,
-                "department": department,
-                "message": "Connecting caller to human agent now.",
-            }
-            await self._qwen.send_tool_output(call_id, result)
-            self._transfer.set()
-            return
+        elif name == "end_call":
+            result = {"ok": True}
+            self._end_call = True
         else:
             result = {"ok": False, "error": f"Unknown tool: {name}"}
 
         await self._qwen.send_tool_output(call_id, result)
+
+        if self._end_call:
+            logger.info("End call triggered — waiting %.1fs for goodbye audio", CLOSING_GRACE_SECONDS)
+            await asyncio.sleep(CLOSING_GRACE_SECONDS)
+            self._terminated = True
+            await self._qwen.close()
+            try:
+                await self._call.disconnect()
+            except Exception:
+                pass
 
     @staticmethod
     def downsample_24_to_16(pcm: bytes) -> bytes:
@@ -295,26 +285,14 @@ class Receptionist:
         samples = np.frombuffer(pcm, dtype=np.int16)
         return soxr.resample(samples, 24000, 16000).astype(np.int16).tobytes()
 
-    async def run(self) -> bool:
+    async def run(self) -> None:
         self._call.on_hangup(self._on_hangup)
         await self._qwen.connect()
         self._tasks = [
             asyncio.create_task(self._stream_up()),
             asyncio.create_task(self._qwen.receive_loop()),
-            asyncio.create_task(self._watch_transfer()),
         ]
         await asyncio.gather(*self._tasks, return_exceptions=True)
-        return self._transfer.is_set()
-
-    async def _watch_transfer(self) -> None:
-        await self._transfer.wait()
-        logger.info("Transfer requested — waiting %.1fs for goodbye audio", HANDOFF_GRACE_SECONDS)
-        await asyncio.sleep(HANDOFF_GRACE_SECONDS)
-        self._terminated = True
-        await self._qwen.close()
-        for t in self._tasks:
-            if t is not asyncio.current_task():
-                t.cancel()
 
     async def _stream_up(self) -> None:
         try:
@@ -386,8 +364,7 @@ async def handle_call(call: Call, crm: CRMBackend, call_log: ReceptionCallLog) -
         )
         return
 
-    transfer = await receptionist.run()
-    outcome = "handoff_to_human" if transfer else "ai_handled"
+    await receptionist.run()
 
     call_log.append(
         {
@@ -400,32 +377,16 @@ async def handle_call(call: Call, crm: CRMBackend, call_log: ReceptionCallLog) -
             "crm_backend": CRM_BACKEND_NAME,
             "lead_record": lead_record,
             "intent": receptionist.classified_intent,
-            "outcome": outcome,
-            "handoff_reason": receptionist.transfer_reason or None,
+            "outcome": "ai_handled",
             "ended_at": datetime.now(timezone.utc).isoformat(),
             "tool_calls": receptionist.tool_calls,
         }
     )
 
-    if not transfer:
-        try:
-            await call.close()
-        except CallClosedError:
-            pass
-        return
-
     try:
-        await call.clear_send_audio_buffer()
+        await call.close()
     except CallClosedError:
-        return
-    connected = await call.connect(ring_time_seconds=40)
-    if not connected:
-        logger.error(
-            "connect failed: %s (%s)", connected.error_message, connected.error_code
-        )
-        await call.disconnect()
-        return
-    await call.close()
+        pass
 
 
 async def main() -> None:

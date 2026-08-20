@@ -14,9 +14,8 @@ confirm, and optionally sends a Telegram confirmation.
 - Calendar: Google Calendar API when credentials are set, otherwise an
   in-memory demo calendar
 - Optional Telegram confirm (skipped silently if tokens are missing)
-- Fallback: `connect()` staff → `close()` when the caller needs a human
 
-**State flow:** `NEW → LIVE` (`answer()`) → `TERMINATED` on success (`close()`), or `connect()` then agent `close()` for handoff
+**State flow:** `NEW → LIVE` (`answer()`) → `TERMINATED` on completion (`close()`)
 
 ## Stack
 

@@ -47,7 +47,7 @@ SAMPLE_RATE = 24000
 MODEL = "models/gemini-3.1-flash-live-preview"
 AGENT_NAME = "Amy"
 CLINIC_NAME = "HealthFirst Clinic"
-HANDOFF_GRACE_SECONDS = float(os.getenv("HANDOFF_AUDIO_GRACE_SECONDS", "3"))
+CLOSING_GRACE_SECONDS = float(os.getenv("CLOSING_AUDIO_GRACE_SECONDS", "3.5"))
 CALENDAR = build_calendar()
 _LAST_BOOKING: dict[str, Optional[Booking]] = {"value": None}
 
@@ -75,9 +75,9 @@ Availability workflow:
 2. Offer open times from list_slots. Never invent availability.
 3. Read back name, phone, date, time, and appointment type, then wait for the caller to explicitly confirm.
 4. Only after explicit confirmation, call book_appointment. Never say the appointment is booked until book_appointment returns ok=true.
-5. After a successful book, read back the booking_id once and close politely.
+5. After a successful book, read back the booking_id once, thank the caller warmly, and call end_call.
 
-If no slot works or the caller asks for a person, call escalate_to_human.
+If no slot works for the requested date, offer nearby available days or times from list_slots.
 Keep replies short and conversational — this is a phone call.
 """
 
@@ -140,9 +140,9 @@ BOOK_TOOL = types.FunctionDeclaration(
     },
 )
 
-ESCALATE_TOOL = types.FunctionDeclaration(
-    name="escalate_to_human",
-    description="Transfer to a human scheduler when no slot works or the caller asks.",
+END_CALL_TOOL = types.FunctionDeclaration(
+    name="end_call",
+    description="End the phone call after reading the booking confirmation and saying goodbye.",
     parameters={"type": "object", "properties": {}, "required": []},
 )
 
@@ -209,8 +209,8 @@ async def _dispatch_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
             "patient_name": booking.patient_name,
         }
 
-    if name == "escalate_to_human":
-        return {"ok": True, "escalate": True}
+    if name == "end_call":
+        return {"ok": True}
 
     return {"ok": False, "error": f"unknown tool {name}"}
 
@@ -219,7 +219,7 @@ class GeminiBookingBridge:
     def __init__(self, call: Call, live: AsyncSession):
         self._call = call
         self._live = live
-        self._escalate = False
+        self._end_call = False
         self._terminated = False
         self._tasks: list[asyncio.Task] = []
 
@@ -232,8 +232,7 @@ class GeminiBookingBridge:
         for t in self._tasks:
             t.cancel()
 
-    async def run(self) -> bool:
-        """Returns True if the agent requested human escalation."""
+    async def run(self) -> None:
         self._call.on_hangup(self._on_hangup)
         await self._live.send_realtime_input(
             text=(
@@ -247,7 +246,6 @@ class GeminiBookingBridge:
         from_model = asyncio.create_task(self._from_model())
         self._tasks = [to_model, from_model]
         await asyncio.gather(to_model, from_model, return_exceptions=True)
-        return self._escalate
 
     async def _to_model(self) -> None:
         try:
@@ -287,8 +285,8 @@ class GeminiBookingBridge:
                             args = dict(fc.args or {})
                             logger.info("tool %s(%s)", fc.name, args)
                             result = await _dispatch_tool(fc.name, args)
-                            if result.get("escalate"):
-                                self._escalate = True
+                            if fc.name == "end_call":
+                                self._end_call = True
                             responses.append(
                                 types.FunctionResponse(
                                     id=fc.id,
@@ -299,13 +297,17 @@ class GeminiBookingBridge:
                         await self._live.send_tool_response(
                             function_responses=responses
                         )
-                        if self._escalate:
+                        if self._end_call:
                             logger.info(
-                                "Escalation requested — waiting %.1fs for transfer audio",
-                                HANDOFF_GRACE_SECONDS,
+                                "Closing turn active — waiting %.1fs for goodbye audio to finish...",
+                                CLOSING_GRACE_SECONDS,
                             )
-                            await asyncio.sleep(HANDOFF_GRACE_SECONDS)
+                            await asyncio.sleep(CLOSING_GRACE_SECONDS)
                             self._terminated = True
+                            try:
+                                await self._call.disconnect()
+                            except Exception:
+                                pass
                             return
         except CallClosedError:
             pass
@@ -324,7 +326,7 @@ async def handle_call(call: Call) -> None:
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Zephyr")
             )
         ),
-        tools=[types.Tool(function_declarations=[LIST_TOOL, BOOK_TOOL, ESCALATE_TOOL])],
+        tools=[types.Tool(function_declarations=[LIST_TOOL, BOOK_TOOL, END_CALL_TOOL])],
         system_instruction=(
             SYSTEM_INSTRUCTION
             + f"\nCaller's line number on this call is {phone}; "
@@ -341,30 +343,12 @@ async def handle_call(call: Call) -> None:
                 answered.error_code,
             )
             return
-        escalate = await GeminiBookingBridge(call, live).run()
+        await GeminiBookingBridge(call, live).run()
 
-    if not escalate:
-        try:
-            await call.close()
-        except CallClosedError:
-            pass
-        return
-
-    # Human fallback
     try:
-        await call.clear_send_audio_buffer()
+        await call.close()
     except CallClosedError:
-        return
-    connected = await call.connect(ring_time_seconds=40)
-    if not connected:
-        logger.error(
-            "staff connect failed: %s (%s)",
-            connected.error_message,
-            connected.error_code,
-        )
-        await call.disconnect()
-        return
-    await call.close()
+        pass
 
 
 async def main() -> None:

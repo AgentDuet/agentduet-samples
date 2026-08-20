@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 
 from dotenv import load_dotenv
+from google.genai import types
 from livekit.agents import Agent, AgentServer, AgentSession, JobContext, cli
 from livekit.plugins import google
 
@@ -45,12 +46,25 @@ async def entrypoint(ctx: JobContext) -> None:
             model="gemini-2.5-flash-native-audio-preview-12-2025",
             voice="Puck",
             instructions=INSTRUCTIONS,
+            # Faster end-of-turn so replies start sooner on a phone bridge.
+            realtime_input_config=types.RealtimeInputConfig(
+                automatic_activity_detection=types.AutomaticActivityDetection(
+                    start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
+                    end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
+                    silence_duration_ms=400,
+                    prefix_padding_ms=100,
+                ),
+            ),
         ),
     )
 
     await session.start(
         agent=VoiceAssistant(),
         room=ctx.room,
+    )
+    # Don't block the session on the greeting turn completing.
+    session.generate_reply(
+        instructions="Greet the caller briefly and offer to help.",
     )
     logger.info("Gemini Live session started in %s", ctx.room.name)
 

@@ -9,7 +9,7 @@ description = "Medical Pre-Triage voice agent using AgentDuet SDK and Amazon Nov
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-  "agentduet==1.0.0b10",
+  "agentduet==1.0.0",
   "aws-sdk-bedrock-runtime",
   "smithy-aws-core",
   "boto3>=1.35.0,<2",
