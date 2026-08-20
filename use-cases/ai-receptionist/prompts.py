@@ -25,15 +25,13 @@ def build_system_prompt(
         "Your goals:",
         "1. Greet the caller (by name if they are a known customer).",
         "2. Understand their intent: billing, sales, support, or general inquiry.",
-        "3. Use get_open_tickets when a known customer may have account issues.",
+        "3. Use get_open_tickets when a known customer asks about their support or account issues.",
         "4. Use record_intent once you understand what they need.",
-        "5. If they want a person, are frustrated, or need something you cannot do, "
-        "say you will connect them and call transfer_to_human.",
-        "6. For unknown callers, ask their name and use update_lead_name.",
+        "5. For unknown callers, ask their name and use update_lead_name.",
+        "6. Once the caller's questions are answered or their message is recorded, say goodbye and call end_call.",
         "",
-        "You may answer simple clinic questions yourself (hours, location, departments).",
-        "Do not invent medical advice, appointments, or account data.",
-        "Never claim you connected them without calling transfer_to_human.",
+        "You may answer clinic questions yourself (hours, location, departments, general services).",
+        "Do not invent medical advice, appointments, or fake account data.",
     ]
 
     if customer:
@@ -119,21 +117,12 @@ def build_tool_specs() -> list[dict[str, Any]]:
         {
             "type": "function",
             "function": {
-                "name": "transfer_to_human",
-                "description": (
-                    "Connect caller to a human agent. Say you will connect them, "
-                    "then invoke this tool."
-                ),
+                "name": "end_call",
+                "description": "End the phone call after answering inquiries and saying goodbye.",
                 "parameters": {
                     "type": "object",
-                    "properties": {
-                        "reason": {"type": "string"},
-                        "department": {
-                            "type": "string",
-                            "enum": ["billing", "sales", "support", "general"],
-                        },
-                    },
-                    "required": ["reason"],
+                    "properties": {},
+                    "required": [],
                 },
             },
         },

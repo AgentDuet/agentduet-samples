@@ -35,7 +35,7 @@ cp .env.example .env
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install --pre -r requirements.txt
+pip install -r requirements.txt
 
 export PYTHONPATH=src
 python -m medical_pretriage.main
@@ -141,7 +141,7 @@ This agent provides **pre-triage guidance only**. It is not a licensed clinician
 
 ## References
 
-- [AgentDuet SDK 1.0.0b10 (PyPI)](https://pypi.org/project/agentduet/1.0.0b10/)
+- [AgentDuet SDK 1.0.0 (PyPI)](https://pypi.org/project/agentduet/1.0.0/)
 - [AgentDuet docs](https://docs.agentduet.com)
 - [Amazon Nova Sonic getting started](https://docs.aws.amazon.com/nova/latest/nova2-userguide/sonic-getting-started.html)
 - [Lightsail instances](https://docs.aws.amazon.com/lightsail/latest/userguide/amazon-lightsail-getting-started.html)

@@ -1,7 +1,7 @@
 # Meridian Clinic AI Receptionist
 
-Answer the call, look up the caller in CRM, personalize with **Qwen Omni**, then
-route to a human when needed via `connect()` → `close()`.
+Answer the call, look up the caller in CRM, personalize with **Qwen Omni**, and
+record customer intent and lead information.
 
 Brand: **Meridian Clinic**.
 
@@ -10,10 +10,9 @@ Brand: **Meridian Clinic**.
 - Lookup by caller phone on arrival (`call.participant`)
 - Known caller → greet by name; surface open tickets
 - Unknown caller → create a lead; collect name with `update_lead_name`
-- Tools: `get_open_tickets`, `record_intent`, `update_lead_name`, `transfer_to_human`
-- Handoff: `connect()` rings original callee, then `close()` leaves the AI
+- Tools: `get_open_tickets`, `record_intent`, `update_lead_name`, `end_call`
 
-**State flow:** `NEW → LIVE` (`answer()`) → `connect()` (still `LIVE`) → agent `close()` → `TERMINATED`
+**State flow:** `NEW → LIVE` (`answer()`) → AI conversation → `TERMINATED` (`close()`)
 
 ## CRM backends
 
@@ -53,7 +52,7 @@ python main.py
 
 1. **Known caller** — call from Claudia’s seeded number (`+65 XXXXXXXX` in `data/customers.json`) → personalized greeting mentioning open tickets.
 2. **New caller** — unknown number → lead in `data/leads.json`, ask for name.
-3. **Human handoff** — say *"I need to speak to someone"* → `transfer_to_human` → `connect` / `close`.
+3. **Inquiry handling** — ask questions regarding clinic hours or report an issue → `record_intent` → `end_call`.
 
 ## Layout
 

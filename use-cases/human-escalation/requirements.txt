@@ -1,3 +1,0 @@
-agentduet==1.0.0
-websockets>=15.0.1
-python-dotenv>=1.0.0

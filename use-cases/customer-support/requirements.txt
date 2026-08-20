@@ -1,5 +1,0 @@
-agentduet==1.0.0
-aws-sdk-bedrock-runtime
-smithy-aws-core
-python-dotenv
-requests

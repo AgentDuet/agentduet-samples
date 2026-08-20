@@ -1,4 +1,0 @@
-agentduet==1.0.0
-google-genai
-python-dotenv
-httpx>=0.27.0

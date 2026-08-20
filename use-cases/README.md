@@ -15,9 +15,12 @@ and `.env.example`.
 | [`customer-support`](./customer-support) | VibeRider Resolve — rider/driver lost items & complaints | **Amazon Nova Sonic** |
 | [`ai-receptionist`](./ai-receptionist) | Meridian Clinic CRM lookup, personalize, human handoff | **Qwen Omni** |
 | [`virtual-assistant`](./virtual-assistant) | Sarah — Apex Retail store policy Q&A from a fixed knowledge base | **OpenAI Realtime** |
-| [`human-escalation`](./human-escalation) | VibeRider support first; escalate with saved context | **Grok Voice** |
 | [`driver-payment-assistant`](./driver-payment-assistant) | VibeRider driver payment Q&A from a fixed policy file | **Gemini Live** |
 | [`after-hours-voicemail`](./after-hours-voicemail) | Northline after-hours message + Slack notify; business-hours pass-through | **Gemini Live** |
+| [`scam-prevention`](./scam-prevention) | SafeBank Guardian — silent call monitoring with private whisper fraud alerts | **Gemini Live / Whisper** |
+| [`outbound-feedback`](./outbound-feedback) | TransitExpress — automated post-trip passenger survey with complaint triage | **Gemini Live** |
+| [`document-collection`](./document-collection) | Omni Bank — outbound compliance document and purpose code collection | **Gemini Live** |
+| [`human-escalation`](./human-escalation) | Apex Solutions — warm-transfer to human specialists with context preservation | **Gemini Live** |
 
 ## Prerequisites
 
