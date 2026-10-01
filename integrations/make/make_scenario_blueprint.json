@@ -1,0 +1,154 @@
+{
+  "name": "Grand Horizon Hotel Reservations - AgentDuet Integration",
+  "description": "Make.com scenario blueprint for live room availability check and booking confirmation with Google Sheets and Email notification.",
+  "version": 1,
+  "scenarios": [
+    {
+      "name": "Scenario 1: Check Live Room Availability",
+      "modules": [
+        {
+          "id": 1,
+          "module": "gateway:CustomWebHook",
+          "name": "AgentDuet Availability Webhook",
+          "parameters": {
+            "hook": "availability_webhook_id"
+          },
+          "mapper": {
+            "expected_fields": [
+              { "name": "event", "type": "text", "description": "check_availability" },
+              { "name": "check_in", "type": "text", "description": "Arrival date" },
+              { "name": "check_out", "type": "text", "description": "Departure date" },
+              { "name": "guests", "type": "number", "description": "Number of guests" }
+            ]
+          }
+        },
+        {
+          "id": 2,
+          "module": "google-sheets:searchRows",
+          "name": "Google Sheets: Check Booked Dates",
+          "parameters": {
+            "spreadsheetId": "YOUR_GOOGLE_SPREADSHEET_ID",
+            "sheetId": "Room_Bookings",
+            "filter": [
+              {
+                "column": "Status",
+                "operator": "equals",
+                "value": "confirmed"
+              }
+            ]
+          }
+        },
+        {
+          "id": 3,
+          "module": "builtin:Router",
+          "name": "Availability Decision",
+          "routes": [
+            {
+              "label": "Rooms Open",
+              "condition": "{{length(2.filtered_booked) < 10}}",
+              "targetModuleId": 4
+            },
+            {
+              "label": "Fully Booked",
+              "condition": "{{length(2.filtered_booked) >= 10}}",
+              "targetModuleId": 5
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "module": "gateway:WebhookResponse",
+          "name": "Webhook Response: Return Room Options & Rates",
+          "parameters": {
+            "status": 200,
+            "headers": [
+              { "name": "Content-Type", "value": "application/json" }
+            ],
+            "body": "{\n  \"available\": true,\n  \"room_options\": [\n    {\n      \"room_type\": \"Deluxe Room\",\n      \"nightly_rate\": 150,\n      \"currency\": \"USD\",\n      \"description\": \"Spacious room with king bed and city view\"\n    },\n    {\n      \"room_type\": \"Executive Suite\",\n      \"nightly_rate\": 250,\n      \"currency\": \"USD\",\n      \"description\": \"Luxury suite with separate lounge area and panoramic view\"\n    }\n  ]\n}"
+          }
+        },
+        {
+          "id": 5,
+          "module": "gateway:WebhookResponse",
+          "name": "Webhook Response: Fully Booked",
+          "parameters": {
+            "status": 200,
+            "headers": [
+              { "name": "Content-Type", "value": "application/json" }
+            ],
+            "body": "{\n  \"available\": false,\n  \"room_options\": [],\n  \"message\": \"No rooms available for selected dates.\"\n}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scenario 2: Record Booking in Google Sheets & Send Email",
+      "modules": [
+        {
+          "id": 10,
+          "module": "gateway:CustomWebHook",
+          "name": "AgentDuet Booking Webhook",
+          "parameters": {
+            "hook": "booking_webhook_id"
+          },
+          "mapper": {
+            "expected_fields": [
+              { "name": "guest_name", "type": "text" },
+              { "name": "guest_email", "type": "text" },
+              { "name": "check_in", "type": "text" },
+              { "name": "check_out", "type": "text" },
+              { "name": "guests", "type": "number" },
+              { "name": "room_type", "type": "text" },
+              { "name": "nightly_rate", "type": "number" },
+              { "name": "caller_phone", "type": "text" }
+            ]
+          }
+        },
+        {
+          "id": 11,
+          "module": "google-sheets:addRow",
+          "name": "Google Sheets: Record Reservation",
+          "parameters": {
+            "spreadsheetId": "YOUR_GOOGLE_SPREADSHEET_ID",
+            "sheetId": "Room_Bookings",
+            "values": {
+              "Booking_ID": "BK-{{substring(uuid; 0; 6)}}",
+              "Guest_Name": "{{10.guest_name}}",
+              "Guest_Email": "{{10.guest_email}}",
+              "Phone": "{{10.caller_phone}}",
+              "Check_In": "{{10.check_in}}",
+              "Check_Out": "{{10.check_out}}",
+              "Guests": "{{10.guests}}",
+              "Room_Type": "{{10.room_type}}",
+              "Nightly_Rate": "{{10.nightly_rate}}",
+              "Status": "confirmed",
+              "Created_At": "{{now}}"
+            }
+          }
+        },
+        {
+          "id": 12,
+          "module": "google-email:sendAnEmail",
+          "name": "Gmail: Send Confirmation Email to Guest",
+          "parameters": {
+            "to": "{{10.guest_email}}",
+            "subject": "Grand Horizon Hotel: Reservation Confirmation (BK-{{11.Booking_ID}})",
+            "content": "Dear {{10.guest_name}},\n\nThank you for booking your stay at Grand Horizon Hotel!\n\nBooking Details:\n- Confirmation Reference: BK-{{11.Booking_ID}}\n- Room Type: {{10.room_type}}\n- Check-In: {{10.check_in}}\n- Check-Out: {{10.check_out}}\n- Nightly Rate: ${{10.nightly_rate}} USD\n- Number of Guests: {{10.guests}}\n\nHotel Location:\n100 Coastal Boulevard, Oceanview Bay\n\nIf you have any questions prior to arrival, feel free to call our reservations desk.\n\nWarm regards,\nGrand Horizon Hotel Team"
+          }
+        },
+        {
+          "id": 13,
+          "module": "gateway:WebhookResponse",
+          "name": "Webhook Response: Return Booking Confirmation",
+          "parameters": {
+            "status": 200,
+            "headers": [
+              { "name": "Content-Type", "value": "application/json" }
+            ],
+            "body": "{\n  \"status\": \"confirmed\",\n  \"booking_id\": \"BK-{{11.Booking_ID}}\",\n  \"email_sent\": true,\n  \"guest_name\": \"{{10.guest_name}}\",\n  \"room_type\": \"{{10.room_type}}\"\n}"
+          }
+        }
+      ]
+    }
+  ]
+}

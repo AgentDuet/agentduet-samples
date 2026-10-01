@@ -31,11 +31,11 @@ MANIFEST
 #   before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
-
+integrations/n8n/DEMO_SCRIPTS.md
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
-
+integrations/livekit
 # Unit test / coverage reports
 htmlcov/
 .tox/
@@ -216,3 +216,4 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+integrations/pipecat/inbound-agent/

@@ -1,0 +1,49 @@
+{
+  "name": "City Cab Lost and Found Spreadsheet Template",
+  "description": "Template structure for the Google Sheet used by the AgentDuet + n8n Lost and Found integration.",
+  "spreadsheet_title": "City_Cab_Lost_and_Found",
+  "sheets": [
+    {
+      "name": "Found_Items",
+      "description": "Stores reports submitted by cab drivers when finding items in their vehicles.",
+      "columns": [
+        { "name": "Timestamp", "type": "string", "example": "2026-10-01T07:15:00Z" },
+        { "name": "Item_Type", "type": "string", "example": "wallet" },
+        { "name": "Detail_1", "type": "string", "example": "brown leather bi-fold" },
+        { "name": "Detail_2", "type": "string", "example": "driver license for John Doe" },
+        { "name": "Approx_Trip_Time", "type": "string", "example": "around 2:30 PM" },
+        { "name": "Route_Area", "type": "string", "example": "Downtown to Airport" },
+        { "name": "Seat_Position", "type": "string", "example": "back seat passenger side" },
+        { "name": "Driver_Phone", "type": "string", "example": "+15551234567" },
+        { "name": "Status", "type": "string", "example": "open" }
+      ]
+    },
+    {
+      "name": "Lost_Items",
+      "description": "Stores lost item claims submitted by passengers.",
+      "columns": [
+        { "name": "Timestamp", "type": "string", "example": "2026-10-01T07:16:00Z" },
+        { "name": "Item_Type", "type": "string", "example": "wallet" },
+        { "name": "Detail_1", "type": "string", "example": "brown leather wallet" },
+        { "name": "Detail_2", "type": "string", "example": "silver card clip" },
+        { "name": "Approx_Trip_Time", "type": "string", "example": "yesterday 3 PM" },
+        { "name": "Route_Area", "type": "string", "example": "Marina Bay to Airport" },
+        { "name": "Customer_Phone", "type": "string", "example": "+15559876543" },
+        { "name": "Ride_ID", "type": "string", "example": "RIDE-4921" },
+        { "name": "Status", "type": "string", "example": "open" }
+      ]
+    },
+    {
+      "name": "Rides",
+      "description": "Trip logs used to locate driver phone numbers when a passenger reports an unmatched lost item.",
+      "columns": [
+        { "name": "Ride_ID", "type": "string", "example": "RIDE-4921" },
+        { "name": "Driver_Name", "type": "string", "example": "Carlos" },
+        { "name": "Driver_Phone", "type": "string", "example": "+15554443322" },
+        { "name": "Vehicle_Plate", "type": "string", "example": "CAB-882" },
+        { "name": "Customer_Phone", "type": "string", "example": "+15559876543" },
+        { "name": "Route_Area", "type": "string", "example": "Downtown to Airport" }
+      ]
+    }
+  ]
+}
