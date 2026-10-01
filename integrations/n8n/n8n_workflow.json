@@ -1,57 +1,19 @@
 {
-  "name": "Cab Company Lost and Found: AgentDuet + Google Sheets",
+  "name": "AgentDuet Restaurant Table Reservation",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "lost-and-found-intake",
+        "path": "restaurant-reservation",
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "webhook-intake",
-      "name": "AgentDuet Intake Webhook",
+      "id": "webhook-reservation",
+      "name": "Reservation Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [100, 300]
-    },
-    {
-      "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": {
-                "options": { "caseSensitive": false, "leftValue": "" },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.body.role || $json.body.caller_type }}",
-                    "rightValue": "driver",
-                    "operator": { "type": "string", "operation": "equals" }
-                  }
-                ],
-                "combinator": "and"
-              }
-            },
-            {
-              "conditions": {
-                "options": { "caseSensitive": false, "leftValue": "" },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.body.role || $json.body.caller_type }}",
-                    "rightValue": "customer",
-                    "operator": { "type": "string", "operation": "equals" }
-                  }
-                ],
-                "combinator": "and"
-              }
-            }
-          ]
-        }
-      },
-      "id": "switch-caller-type",
-      "name": "Route Driver vs Customer",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3,
-      "position": [320, 300]
+      "position": [220, 300],
+      "webhookId": "agentduet-restaurant-reservation"
     },
     {
       "parameters": {
@@ -63,276 +25,69 @@
         },
         "sheetName": {
           "__rl": true,
-          "value": "Found_Items",
+          "value": "Reservations",
           "mode": "name"
         },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
             "Timestamp": "={{ $now.toISO() }}",
-            "Item_Type": "={{ $json.body.item_type }}",
-            "Detail_1": "={{ $json.body.distinguishing_detail_1 }}",
-            "Detail_2": "={{ $json.body.distinguishing_detail_2 }}",
-            "Approx_Trip_Time": "={{ $json.body.approx_trip_time }}",
-            "Route_Area": "={{ $json.body.route_area }}",
-            "Seat_Position": "={{ $json.body.seat_position }}",
-            "Driver_Phone": "={{ $json.body.callback_number || $json.body.driver_phone }}",
-            "Status": "open"
+            "Guest_Name": "={{ $json.body.guest_name }}",
+            "Party_Size": "={{ $json.body.party_size }}",
+            "Reservation_Time": "={{ $json.body.reservation_time }}",
+            "Phone_Number": "={{ $json.body.phone_number }}",
+            "Special_Requests": "={{ $json.body.special_requests || 'None' }}",
+            "Status": "confirmed"
           }
         },
         "options": {}
       },
-      "id": "sheets-insert-found",
-      "name": "Insert into Found_Items",
+      "id": "sheets-insert-reservation",
+      "name": "Insert into Reservations",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [560, 200]
-    },
-    {
-      "parameters": {
-        "operation": "append",
-        "documentId": {
-          "__rl": true,
-          "value": "={{ $env.GOOGLE_SHEET_ID }}",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Lost_Items",
-          "mode": "name"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "Timestamp": "={{ $now.toISO() }}",
-            "Item_Type": "={{ $json.body.item_type }}",
-            "Detail_1": "={{ $json.body.distinguishing_detail_1 }}",
-            "Detail_2": "={{ $json.body.distinguishing_detail_2 }}",
-            "Approx_Trip_Time": "={{ $json.body.approx_trip_time }}",
-            "Route_Area": "={{ $json.body.route_area }}",
-            "Customer_Phone": "={{ $json.body.callback_number || $json.body.customer_phone }}",
-            "Ride_ID": "={{ $json.body.ride_id }}",
-            "Status": "open"
-          }
-        },
-        "options": {}
-      },
-      "id": "sheets-insert-lost",
-      "name": "Insert into Lost_Items",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.5,
-      "position": [560, 420]
+      "position": [460, 300]
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\n  \"status\": \"success\",\n  \"message\": \"Intake report recorded in Google Sheets\",\n  \"report_id\": {{ $json.row_number || $json.id || 101 }}\n}"
+        "responseBody": "={\n  \"status\": \"confirmed\",\n  \"confirmation_code\": \"RES-{{ Math.floor(1000 + Math.random() * 9000) }}\",\n  \"message\": \"Table reserved for {{ $('Reservation Webhook').item.json.body.guest_name }} (party of {{ $('Reservation Webhook').item.json.body.party_size }}) at {{ $('Reservation Webhook').item.json.body.reservation_time }}\",\n  \"guest_name\": \"{{ $('Reservation Webhook').item.json.body.guest_name }}\",\n  \"party_size\": {{ $('Reservation Webhook').item.json.body.party_size }},\n  \"reservation_time\": \"{{ $('Reservation Webhook').item.json.body.reservation_time }}\"\n}"
       },
-      "id": "respond-intake",
+      "id": "respond-reservation",
       "name": "Respond to AgentDuet",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [800, 300]
-    },
-    {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "lost-and-found-lookup",
-        "responseMode": "responseNode",
-        "options": {}
-      },
-      "id": "webhook-lookup",
-      "name": "Pre-Intake Lookup Webhook",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [100, 600]
-    },
-    {
-      "parameters": {
-        "operation": "read",
-        "documentId": {
-          "__rl": true,
-          "value": "={{ $env.GOOGLE_SHEET_ID }}",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Lost_Items",
-          "mode": "name"
-        },
-        "filtersUi": {
-          "criteria": [
-            {
-              "column": "Customer_Phone",
-              "operator": "equals",
-              "value": "={{ $json.body.caller_phone }}"
-            },
-            {
-              "column": "Status",
-              "operator": "equals",
-              "value": "pending_confirmation"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "sheets-lookup-case",
-      "name": "Lookup Open Case in Google Sheets",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.5,
-      "position": [340, 600]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={\n  \"has_open_case\": {{ $json.length > 0 }},\n  \"case\": {{ $json.length > 0 ? $json[0] : null }}\n}"
-      },
-      "id": "respond-lookup",
-      "name": "Respond Lookup to AgentDuet",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [580, 600]
-    },
-    {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "lost-and-found-status",
-        "responseMode": "responseNode",
-        "options": {}
-      },
-      "id": "webhook-status",
-      "name": "Case Status Update Webhook",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [100, 800]
-    },
-    {
-      "parameters": {
-        "operation": "update",
-        "documentId": {
-          "__rl": true,
-          "value": "={{ $env.GOOGLE_SHEET_ID }}",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Lost_Items",
-          "mode": "name"
-        },
-        "matchColumn": "Row",
-        "matchValue": "={{ $json.body.case_id }}",
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "Status": "={{ $json.body.status }}"
-          }
-        },
-        "options": {}
-      },
-      "id": "sheets-update-status",
-      "name": "Update Status in Google Sheets",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.5,
-      "position": [340, 800]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={\n  \"status\": \"success\",\n  \"case_id\": {{ $json.body.case_id }},\n  \"updated_status\": \"{{ $json.body.status }}\"\n}"
-      },
-      "id": "respond-status",
-      "name": "Respond Status Update",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [580, 800]
-    },
-    {
-      "parameters": {
-        "rule": {
-          "interval": [
-            { "field": "cronExpression", "expression": "0 2 * * *" }
-          ]
-        }
-      },
-      "id": "cron-expiration",
-      "name": "Nightly Expiration Schedule",
-      "type": "n8n-nodes-base.cron",
-      "typeVersion": 1,
-      "position": [100, 1000]
-    },
-    {
-      "parameters": {
-        "operation": "read",
-        "documentId": {
-          "__rl": true,
-          "value": "={{ $env.GOOGLE_SHEET_ID }}",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Lost_Items",
-          "mode": "name"
-        },
-        "filtersUi": {
-          "criteria": [
-            { "column": "Status", "operator": "equals", "value": "open" }
-          ]
-        },
-        "options": {}
-      },
-      "id": "sheets-query-expired",
-      "name": "Query Stale Open Records in Google Sheets",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.5,
-      "position": [340, 1000]
+      "position": [700, 300]
     }
   ],
+  "pinData": {},
   "connections": {
-    "AgentDuet Intake Webhook": {
+    "Reservation Webhook": {
       "main": [
-        [{ "node": "Route Driver vs Customer", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Insert into Reservations",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Route Driver vs Customer": {
+    "Insert into Reservations": {
       "main": [
-        [{ "node": "Insert into Found_Items", "type": "main", "index": 0 }],
-        [{ "node": "Insert into Lost_Items", "type": "main", "index": 0 }]
-      ]
-    },
-    "Insert into Found_Items": {
-      "main": [
-        [{ "node": "Respond to AgentDuet", "type": "main", "index": 0 }]
-      ]
-    },
-    "Insert into Lost_Items": {
-      "main": [
-        [{ "node": "Respond to AgentDuet", "type": "main", "index": 0 }]
-      ]
-    },
-    "Pre-Intake Lookup Webhook": {
-      "main": [
-        [{ "node": "Lookup Open Case in Google Sheets", "type": "main", "index": 0 }]
-      ]
-    },
-    "Lookup Open Case in Google Sheets": {
-      "main": [
-        [{ "node": "Respond Lookup to AgentDuet", "type": "main", "index": 0 }]
-      ]
-    },
-    "Case Status Update Webhook": {
-      "main": [
-        [{ "node": "Update Status in Google Sheets", "type": "main", "index": 0 }]
-      ]
-    },
-    "Update Status in Google Sheets": {
-      "main": [
-        [{ "node": "Respond Status Update", "type": "main", "index": 0 }]
-      ]
-    },
-    "Nightly Expiration Schedule": {
-      "main": [
-        [{ "node": "Query Stale Open Records in Google Sheets", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Respond to AgentDuet",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
-  }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1"
 }

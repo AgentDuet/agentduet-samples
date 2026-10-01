@@ -1,165 +1,126 @@
-# Cab Company Lost and Found: AgentDuet + Amazon Nova 2 Sonic + n8n + Google Sheets
+# AgentDuet + n8n Restaurant Table Reservation
 
-A real-time conversational voice automation system for taxi and rideshare companies that pairs **AgentDuet** telephony with **Amazon Nova 2 Sonic** (`amazon.nova-2-sonic-v1:0` on AWS Bedrock) for bidirectional speech-to-speech, **n8n** workflows for backend orchestration, and **Google Sheets** for persistent record storage.
+This reference implementation connects an **AgentDuet** voice agent with **Google Gemini Live** and **n8n** to automate restaurant table reservations over the telephone.
 
-The voice persona is **Maya**, a warm and professional customer service agent who manages driver found-item reports, passenger lost-item claims, and open case verifications.
+When a caller dials the restaurant, an AI hostess named **Bella** answers in real time, collects party details, triggers an n8n webhook, appends the reservation to a Google Sheet, and returns a confirmation code to the caller.
+
+---
 
 ## Architecture
 
-```
-                               ┌────────────────────────────────────────────────────────┐
-                               │                    AgentDuet Phone                     │
-                               │                   Single Telephony No.                 │
-                               └───────────┬────────────────────────────────┬───────────┘
-                                           │                                │
-                       Inbound Driver Call │                                │ Inbound Passenger Call
-                                           ▼                                ▼
-                        ┌───────────────────────────────────────────────────────┐
-                        │        Amazon Nova 2 Sonic Voice Agent Bridge         │
-                        │        (24 kHz Bidirectional LPCM Audio Stream)        │
-                        │ - Pre-intake open case lookup via n8n & Google Sheets │
-                        │ - Realtime spoken conversation & barge-in handling    │
-                        │ - Structured intake extraction on call completion     │
-                        └───────────────────────────┬───────────────────────────┘
-                                                    │
-                                                    │ Structured JSON POST
-                                                    ▼
-                                       ┌─────────────────────────────────┐
-                                       │    n8n Workflow Webhooks        │
-                                       │    (Intake, Lookup, Status)     │
-                                       └────────────────┬────────────────┘
-                                                        │
-                         ┌──────────────────────────────┴──────────────────────────────┐
-                         ▼                                                             ▼
-             ┌────────────────────────┐                                   ┌────────────────────────┐
-             │ Google Sheets:         │                                   │ Google Sheets:         │
-             │ Found_Items            │                                   │ Lost_Items             │
-             └───────────┬────────────┘                                   └───────────┬────────────┘
-                         │                                                             │
-                         └──────────────────────────────┬──────────────────────────────┘
-                                                        ▼
-                                       ┌─────────────────────────────────┐
-                                       │   Local Matching Engine         │
-                                       │ - Category compatibility        │
-                                       │ - Attribute & route overlap     │
-                                       │ - Trip time window proximity    │
-                                       └────────────────┬────────────────┘
-                                                        │ High confidence (>= 0.75)
-                                                        ▼
-                                       ┌─────────────────────────────────┐
-                                       │ One-Way Outbound Notification   │
-                                       │ Customer: Call back to confirm  │
-                                       │ Driver: Informational update    │
-                                       └─────────────────────────────────┘
+```text
+[Telephone Caller] 
+       ↕ (PSTN / SIP)
+[AgentDuet Telephony Engine]
+       ↕ (Bidirectional WebSocket: wss:// • 24 kHz LPCM)
+[Voice Agent Runtime (Gemini Live)]
+       ↓ (HTTPS POST Webhook)
+[n8n 3-Node Workflow]
+       ↓ (Append Row)
+[Google Sheets ("Reservations" tab)]
+       ↓ (JSON Response with Confirmation Code)
+[Voice Agent confirms to Caller on the phone]
 ```
 
-## System Workflow
+---
 
-1. **Single Telephone Hotline**:
-   Both drivers and passengers dial into the same AgentDuet phone number.
-2. **Pre-Intake Check**:
-   Before initiating intake, the agent checks if the incoming phone number has an open or pending case in Google Sheets via n8n:
-   * If an open case exists: Maya greets the caller with their case details and asks for 1 or 2 verifying details to resolve or reopen the case.
-   * If no case exists: Maya greets the caller warmly and asks if they are a driver reporting a found item or a customer reporting a lost item.
-3. **Conversational Speech via Amazon Nova 2 Sonic**:
-   * Caller microphone audio is streamed directly to Amazon Nova 2 Sonic at 24 kHz Linear PCM.
-   * Synthesized speech audio output from Nova 2 Sonic is streamed back to the caller in real time over the AgentDuet connection.
-   * Instant barge-in: when the caller speaks while Maya is talking, Nova signals interruption, immediately clearing AgentDuet's outbound audio buffer.
-4. **Driver Intake Flow**:
-   Collects item type, 2 distinguishing details, approximate trip time or shift, route or pickup/dropoff area, seat position where found, and callback number.
-5. **Customer Intake Flow**:
-   Collects item type, 2 distinguishing details, approximate trip time or date, route or pickup/dropoff area, callback number, and **Ride ID** (from trip receipt or SMS). Maya explicitly reminds the caller: *"Matches are not confirmed live on this call; our automated system will scan driver reports and notify you by phone if a potential match is found."*
-6. **Structured Transmission**:
-   On call conclusion, the bridge extracts structured JSON attributes (`<INTAKE_DATA>`) and posts them to the n8n intake webhook.
-7. **n8n Storage and Matching**:
-   * Stores driver reports in the `Found_Items` sheet and customer reports in the `Lost_Items` sheet.
-   * Evaluates category compatibility, route overlap, and distinguishing detail tokens.
-8. **Edge Condition: Proactive Driver Alert on Unmatched Ride**:
-   When a customer logs a lost item that does not match any existing found report, the system queries the `Rides` sheet using their `ride_id`:
-   * Identifies the assigned driver and their phone number.
-   * Dispatches a proactive one-way outbound call to that driver: *"A passenger from ride {ride_id} has reported a lost {item_type}. Please check your vehicle when safe to do so. If you locate the item, please call our lost-and-found hotline back to log it."*
-9. **Pending Confirmation & One-Way Voice Alerts**:
-   When a high-confidence match is detected (score >= 0.75):
-   * Marks both records as `pending_confirmation` in Google Sheets.
-   * Triggers an automated one-way call to the customer asking them to call back to confirm.
-   * Triggers an informational one-way call to the driver letting them know a potential match was found.
-10. **Customer Callback Resolution**:
-    When the customer dials back in, the pre-intake check detects their pending case, asks for 1 to 2 verifying details, and marks the case `resolved`.
-11. **Automatic Expiration**:
-    Scheduled cron in n8n queries unmatched records older than 14 days and marks their status as `expired`.
+## Workflow in n8n (3 Simple Nodes)
 
-## Constraints Observed
+The workflow consists of just 3 straightforward nodes:
 
-* **Voice Only**: Telephony voice calls only, no WhatsApp.
-* **Google Sheets Persistence**: Easy-to-view spreadsheets via n8n, no complex database tokens or infrastructure.
-* **Zero OpenAI Dependencies**: 100% powered by Amazon Nova 2 Sonic on AWS Bedrock and local deterministic matching algorithms.
-* **No Live Outbound Confirmation Calls**: Outbound calls are automated one-way alerts advising the caller to dial back in.
+1. **Reservation Webhook**: Catches the incoming reservation payload (`guest_name`, `party_size`, `reservation_time`, `phone_number`, `special_requests`).
+2. **Insert into Reservations**: Appends a new row to your `Reservations` Google Sheet tab.
+3. **Respond to AgentDuet**: Generates a confirmation code (for example, `RES-4921`) and returns it back to the voice agent in real time.
 
-## Project Structure
+---
 
-* [`lost_and_found_agent.py`](lost_and_found_agent.py): Amazon Nova 2 Sonic bidirectional speech bridge, prompt configurations for Maya, barge-in buffer flush, and structured intake extraction.
-* [`main.py`](main.py): AgentDuet telephony server with 24 kHz audio bridge and FastAPI dispatcher webhook endpoints.
-* [`matching_engine.py`](matching_engine.py): Pure algorithmic multi-attribute scoring engine (category compatibility, token overlap, route overlap, time proximity) with zero external LLM dependencies.
-* [`n8n_client.py`](n8n_client.py): Async HTTP client for n8n webhooks and Google Sheets operations with mock fallback.
-* [`outbound_dispatcher.py`](outbound_dispatcher.py): AgentDuet one-way outbound voice call dispatcher.
-* [`n8n_workflow.json`](n8n_workflow.json): Ready-to-import n8n workflow definition with Google Sheets nodes.
-* [`google_sheets_template.json`](google_sheets_template.json): Spreadsheet layout reference for `Found_Items`, `Lost_Items`, and `Rides`.
-* [`test_lost_and_found.py`](test_lost_and_found.py): Automated test suite exercising matching rules and the live voice call handling path.
+## Google Sheet Setup (Single Tab)
 
-## Setup Instructions
+Create a Google Sheet and name the first tab **`Reservations`**. Add these column headers in Row 1:
 
-### 1. Environment Setup
+| Timestamp | Guest_Name | Party_Size | Reservation_Time | Phone_Number | Special_Requests | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+
+---
+
+## Quickstart
+
+### 1. Clone the repository and navigate to this folder
+
 ```bash
+git clone https://github.com/AgentDuet/agentduet-samples.git
 cd agentduet-samples/integrations/n8n
+```
+
+### 2. Set up your Python environment
+
+```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment Variables
+### 3. Import the Workflow into n8n
+
+1. In your n8n workspace, click **Add Workflow** > **Import from File**.
+2. Select [`n8n_workflow.json`](./n8n_workflow.json).
+3. Double-click the **Insert into Reservations** node:
+   * **Credential to connect with**: Select your Google Sheets credential.
+   * **Document**: Select your spreadsheet.
+   * **Sheet**: Select `Reservations`.
+4. Click **Save** (top right) and set the workflow to **Active**.
+5. Copy the **Production Webhook URL** from the Webhook node (e.g. `https://your-n8n.cloud/webhook/restaurant-reservation`).
+
+### 4. Configure Environment Variables
+
+Copy the example file:
+
 ```bash
 cp .env.example .env
 ```
-Edit `.env` with your AgentDuet connector credentials, AWS credentials (with Bedrock access to Amazon Nova 2 Sonic), and n8n webhook URLs:
+
+Open `.env` and fill in your credentials:
+
 ```ini
+# AgentDuet credentials (from https://agentduet.com)
 AGENTDUET_API_KEY=your_agentduet_api_key
-AGENTDUET_CONNECTOR_UUID=your_agentduet_connector_uuid
-AGENTDUET_SUBSCRIBER=+15551234567
+AGENTDUET_CONNECTOR_UUID=your_connector_uuid
 
-AWS_ACCESS_KEY_ID=your_aws_access_key_id
-AWS_SECRET_ACCESS_KEY=your_aws_secret_access_key
-AWS_REGION=us-east-1
-NOVA_SONIC_MODEL_ID=amazon.nova-2-sonic-v1:0
-NOVA_SONIC_VOICE_ID=amy
+# Google Gemini Live API key (from https://aistudio.google.com)
+GEMINI_API_KEY=your_gemini_api_key
 
-N8N_INTAKE_WEBHOOK_URL=http://localhost:5678/webhook/lost-and-found-intake
-N8N_LOOKUP_WEBHOOK_URL=http://localhost:5678/webhook/lost-and-found-lookup
-N8N_STATUS_WEBHOOK_URL=http://localhost:5678/webhook/lost-and-found-status
+# n8n Webhook URL (from Step 3)
+N8N_RESERVATION_WEBHOOK_URL=https://your-n8n-instance.app.n8n.cloud/webhook/restaurant-reservation
 ```
 
-### 3. Create Your Google Sheet
-Create a new Google Sheet named `City_Cab_Lost_and_Found` with three tabs (see [`google_sheets_template.json`](google_sheets_template.json)):
-* **Tab 1: `Found_Items`**
-  Columns: `Timestamp`, `Item_Type`, `Detail_1`, `Detail_2`, `Approx_Trip_Time`, `Route_Area`, `Seat_Position`, `Driver_Phone`, `Status`
-* **Tab 2: `Lost_Items`**
-  Columns: `Timestamp`, `Item_Type`, `Detail_1`, `Detail_2`, `Approx_Trip_Time`, `Route_Area`, `Customer_Phone`, `Ride_ID`, `Status`
-* **Tab 3: `Rides`**
-  Columns: `Ride_ID`, `Driver_Name`, `Driver_Phone`, `Vehicle_Plate`, `Customer_Phone`, `Route_Area`
+---
 
-### 4. Import n8n Workflow
-* Open your n8n dashboard.
-* Click **Add Workflow** -> **Import from File**.
-* Select [`n8n_workflow.json`](n8n_workflow.json).
-* Connect your Google Sheets account in the Google Sheets nodes (1-click OAuth).
-* Set your Google Sheet Document ID.
-* Activate the workflow.
+## Testing
 
-### 5. Run the Test Suite
+Run the included test suite to verify the client, tool declarations, and webhook connectivity:
+
 ```bash
-python test_lost_and_found.py
+python test_restaurant_reservation.py
 ```
 
-### 6. Start the Service
+Or run with pytest:
+
+```bash
+pytest test_restaurant_reservation.py -v
+```
+
+---
+
+## Run Live
+
+Start the telephony bridge:
+
 ```bash
 python main.py
 ```
+
+When a phone call arrives on your AgentDuet phone number:
+1. Bella greets the caller:
+   > *"Thank you for calling Bella Vista Bistro! My name is Bella. What date and time would you like to reserve a table for?"*
+2. The caller specifies their party size and time.
+3. Bella invokes the n8n webhook, saves the reservation to your Google Sheet, and speaks the confirmation code directly to the caller.

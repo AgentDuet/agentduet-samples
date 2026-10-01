@@ -1,35 +1,25 @@
-"""AgentDuet telephony server for City Cab Lost and Found.
-
-Bridges live inbound phone calls to Amazon Nova 2 Sonic (24 kHz LPCM) with
-pre-intake case verification and instant barge-in support. Also provides an
-HTTP webhook endpoint for n8n to trigger outbound one-way notifications.
-"""
-
-from __future__ import annotations
-
 import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
-from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from google import genai
 
 from agentduet import (
-    Call,
     CallAudioConfig,
-    CallClosedError,
     IncomingCallNotification,
     SessionManager,
     SessionManagerConfig,
     new_session_id,
 )
 
-from lost_and_found_agent import NovaSonicLostAndFoundBridge
-from n8n_client import N8nClient
-from outbound_dispatcher import OutboundNotificationDispatcher
+from n8n_client import N8nReservationClient
+from restaurant_reservation_agent import (
+    DEFAULT_VOICE,
+    SAMPLE_RATE,
+    RestaurantReservationVoiceAgent,
+    build_gemini_config,
+)
 
 load_dotenv()
 
@@ -39,217 +29,90 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize clients
-n8n_client = N8nClient()
-dispatcher = OutboundNotificationDispatcher()
+# n8n Client
+n8n_client = N8nReservationClient()
 
-session_manager: Optional[SessionManager] = None
-
-
-class MatchNotificationPayload(BaseModel):
-    """Schema for match notification requests from n8n."""
-    customer_phone: str
-    driver_phone: str
-    item_type: str
-    lost_id: Optional[int] = None
-    found_id: Optional[int] = None
-    confidence_score: Optional[float] = None
+# Gemini Live Client
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+MODEL = os.getenv("GEMINI_LIVE_MODEL", "models/gemini-2.0-flash-exp")
+genai_client = genai.Client(vertexai=False, api_key=GEMINI_API_KEY)
 
 
-class UnmatchedCustomerRidePayload(BaseModel):
-    """Schema for handling customer reports with no immediate found matches."""
-    ride_id: str
-    item_type: str
-    customer_phone: Optional[str] = None
-
-
-@asynccontextmanager
-async def lifespan(_app: FastAPI):
-    """Lifecycle manager starting and stopping the AgentDuet telephony listener."""
-    global session_manager
-
-    api_key = os.getenv("AGENTDUET_API_KEY")
+async def main():
+    agentduet_api_key = os.getenv("AGENTDUET_API_KEY")
     connector_uuid = os.getenv("AGENTDUET_CONNECTOR_UUID")
-    subscriber = os.getenv("AGENTDUET_SUBSCRIBER")
 
-    if not api_key or not connector_uuid:
+    if not agentduet_api_key or not connector_uuid:
         logger.warning(
-            "AGENTDUET_API_KEY or AGENTDUET_CONNECTOR_UUID unset; running in mock/offline mode"
+            "AGENTDUET_API_KEY or AGENTDUET_CONNECTOR_UUID not set. "
+            "Please configure your .env file with credentials from https://agentduet.com"
         )
-        yield
         return
 
-    # Configure 24 kHz telephony audio to match Amazon Nova 2 Sonic
+    if not GEMINI_API_KEY:
+        logger.warning(
+            "GEMINI_API_KEY not set. Gemini Live requires a Google AI Studio API key. "
+            "Get one at https://aistudio.google.com"
+        )
+        return
+
+    # 24kHz audio configuration matching Gemini Live speech output
     config = SessionManagerConfig.create(
-        api_key=api_key,
+        api_key=agentduet_api_key,
         connector_uuid=connector_uuid,
         call_audio=CallAudioConfig(
-            sample_rate=24000,
-            buffer_size=1024 * 1024,
+            sample_rate=SAMPLE_RATE,
+            buffer_size=1024 * 1024,  # 1MB buffer
         ),
     )
 
+    gemini_live_config = build_gemini_config(voice_name=DEFAULT_VOICE)
+
     async with SessionManager(config) as sm:
-        session_manager = sm
+        logger.info("AgentDuet connected: %s. Ready for restaurant reservation calls.", sm.id)
 
         @sm.on_incoming_call
         async def on_call(noti: IncomingCallNotification):
-            logger.info("Incoming call received from %s", noti.subscriber)
             session = await sm.open_session(new_session_id(), noti.subscriber)
             call = await session.process_call(noti)
+            caller_phone = str(getattr(call.caller, "address", call.caller) or "+15551234567")
+            logger.info("Incoming reservation call %s from %s", call.id, caller_phone)
 
-            if not await call.answer():
-                logger.error("Failed to answer incoming call %s", call.id)
-                return
-
-            asyncio.create_task(handle_voice_call(call))
-
-        sm_task = asyncio.create_task(sm.run_forever(install_signal_handlers=False))
-        logger.info(
-            "AgentDuet SessionManager connected: %s for Lost and Found line (%s)",
-            sm.id,
-            subscriber,
-        )
-
-        yield
-
-        sm_task.cancel()
-        session_manager = None
-
-
-app = FastAPI(title="City Cab Lost and Found AgentDuet Integration", lifespan=lifespan)
-
-
-async def handle_voice_call(call: Call) -> None:
-    """Handles an active voice call via Amazon Nova 2 Sonic."""
-    caller_phone = str(call.caller)
-    logger.info("Handling voice call %s from %s", call.id, caller_phone)
-
-    # 1. Pre-intake check: query n8n lookup webhook for active open cases
-    open_case = await n8n_client.check_open_case(caller_phone)
-    if open_case:
-        logger.info(
-            "Pre-intake check: found open case #%s for caller %s",
-            open_case.get("id"),
-            caller_phone,
-        )
-
-    # 2. Initialize Nova Sonic speech bridge
-    bridge = NovaSonicLostAndFoundBridge(
-        call=call,
-        n8n_client=n8n_client,
-        caller_phone=caller_phone,
-        pending_case=open_case,
-        dispatcher=dispatcher,
-    )
-    call.on_hangup(bridge.on_hangup)
-
-    try:
-        await bridge.start()
-
-        async def uplink():
-            """Streams caller microphone audio to Nova 2 Sonic."""
             try:
-                async for chunk in call.caller.audio_stream():
-                    await bridge.send_audio(chunk)
-            except CallClosedError:
-                pass
+                async with genai_client.aio.live.connect(
+                    model=MODEL,
+                    config=gemini_live_config,
+                ) as gemini_session:
+                    result = await call.answer()
+                    if not result:
+                        logger.error(
+                            "Failed to answer call %s: %s (%s)",
+                            call.id,
+                            result.error_message,
+                            result.error_code,
+                        )
+                        return
+
+                    agent = RestaurantReservationVoiceAgent(
+                        call=call,
+                        gemini_session=gemini_session,
+                        n8n_client=n8n_client,
+                        caller_phone=caller_phone,
+                    )
+                    logger.info("Voice agent Bella active for call %s", call.id)
+                    await agent.run()
+            except Exception as e:
+                logger.exception("Error processing call %s: %s", call.id, e)
             finally:
-                await bridge.close()
+                logger.info("Call %s completed", call.id)
 
-        async def downlink():
-            """Streams Nova 2 Sonic voice output back to caller."""
-            await bridge.process_responses()
-
-        await asyncio.gather(uplink(), downlink())
-    except CallClosedError:
-        logger.info("Call %s closed by caller", call.id)
-    except Exception as e:
-        logger.exception("Error handling call %s: %s", call.id, e)
-    finally:
-        await bridge.close()
-        try:
-            await call.close()
-        except Exception:
-            pass
-
-
-@app.post("/notify-match")
-async def notify_match(payload: MatchNotificationPayload) -> Dict[str, Any]:
-    """Endpoint called by n8n when a high-confidence match is detected.
-
-    Triggers an automated one-way callback alert to the customer and an
-    informational update to the driver.
-    """
-    logger.info("Received match notification: %s", payload.model_dump())
-
-    # 1. Notify customer to call back and confirm
-    customer_ok = await dispatcher.notify_customer(
-        customer_phone=payload.customer_phone,
-        item_type=payload.item_type,
-    )
-
-    # 2. Notify driver with informational update
-    driver_ok = await dispatcher.notify_driver(
-        driver_phone=payload.driver_phone,
-        item_type=payload.item_type,
-    )
-
-    return {
-        "status": "success",
-        "customer_notified": customer_ok,
-        "driver_notified": driver_ok,
-        "item_type": payload.item_type,
-    }
-
-
-@app.post("/check-unmatched-ride")
-async def check_unmatched_ride(payload: UnmatchedCustomerRidePayload) -> Dict[str, Any]:
-    """Endpoint called by n8n when a customer report has no matching found item.
-
-    Looks up ride_id in the rides table to identify the driver, and triggers a
-    proactive one-way outbound call asking the driver to inspect their vehicle.
-    """
-    logger.info("Checking unmatched ride report: %s", payload.model_dump())
-    ride = await n8n_client.lookup_ride(payload.ride_id)
-    if not ride:
-        return {
-            "status": "ride_not_found",
-            "ride_id": payload.ride_id,
-            "driver_notified": False,
-        }
-
-    driver_phone = ride.get("driver_phone")
-    if not driver_phone:
-        return {
-            "status": "no_driver_phone",
-            "ride_id": payload.ride_id,
-            "driver_notified": False,
-        }
-
-    driver_ok = await dispatcher.notify_driver_unmatched_ride(
-        driver_phone=driver_phone,
-        ride_id=payload.ride_id,
-        item_type=payload.item_type,
-    )
-
-    return {
-        "status": "success",
-        "ride_id": payload.ride_id,
-        "driver_name": ride.get("driver_name"),
-        "driver_phone": driver_phone,
-        "driver_notified": driver_ok,
-    }
-
-
-@app.get("/health")
-async def health():
-    """Health check endpoint."""
-    return {"status": "ok", "service": "lost-and-found-agentduet"}
+        # Keep server running to receive incoming phone calls
+        while True:
+            await asyncio.sleep(1)
 
 
 if __name__ == "__main__":
-    import uvicorn
-
-    port = int(os.getenv("PORT", "8000"))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Server stopped by user")
